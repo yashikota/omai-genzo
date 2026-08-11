@@ -32,10 +32,20 @@ tasks:
     cmds:
       - '{{.GRADLEW}} assembleDebug --no-daemon'
 
+  build:release:
+    desc: Build Release APK (.apk)
+    cmds:
+      - '{{.GRADLEW}} assembleRelease --no-daemon'
+
   bundle:
-    desc: Build Android App Bundle (.aab)
+    desc: Build Debug Android App Bundle (.aab)
     cmds:
       - '{{.GRADLEW}} bundleDebug --no-daemon'
+
+  bundle:release:
+    desc: Build Release Android App Bundle (.aab)
+    cmds:
+      - '{{.GRADLEW}} bundleRelease --no-daemon'
 
   install:
     desc: Build and install Debug APK to connected Android device or emulator
