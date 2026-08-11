@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
@@ -41,7 +40,7 @@ fun SwipeSelectionScreen(
     onSwipeUndo: () -> Unit,
     onSwipeSkip: (PhotoItem) -> Unit,
     onOpenGallery: () -> Unit,
-    onFinishSelection: () -> Unit
+    onFinishSelection: () -> Unit,
 ) {
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
@@ -79,12 +78,12 @@ fun SwipeSelectionScreen(
                             fontWeight = FontWeight.Black,
                             fontSize = 18.sp,
                             color = PrimaryNeon,
-                            fontFamily = FontFamily.SansSerif
+                            fontFamily = FontFamily.SansSerif,
                         )
                         Text(
                             text = if (totalCount > 0) "${currentIndex + 1} / $totalCount" else "",
                             fontSize = 12.sp,
-                            color = TextSecondary
+                            color = TextSecondary,
                         )
                     }
                 },
@@ -93,23 +92,23 @@ fun SwipeSelectionScreen(
                         Icon(
                             imageVector = Icons.Default.GridView,
                             contentDescription = "ギャラリー表示",
-                            tint = PrimaryNeon
+                            tint = PrimaryNeon,
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = DarkBackground
-                )
+                    containerColor = DarkBackground,
+                ),
             )
         },
-        containerColor = DarkBackground
+        containerColor = DarkBackground,
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Header Progress Dashboard
             Row(
@@ -119,14 +118,14 @@ fun SwipeSelectionScreen(
                     .background(DarkSurface)
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
                             .size(8.dp)
                             .clip(CircleShape)
-                            .background(AcceptGreen)
+                            .background(AcceptGreen),
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(text = "$acceptCount", color = AcceptGreen, fontWeight = FontWeight.Black, fontSize = 14.sp)
@@ -148,7 +147,7 @@ fun SwipeSelectionScreen(
                         modifier = Modifier
                             .size(8.dp)
                             .clip(CircleShape)
-                            .background(RejectRed)
+                            .background(RejectRed),
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(text = "$rejectCount", color = RejectRed, fontWeight = FontWeight.Black, fontSize = 14.sp)
@@ -163,7 +162,7 @@ fun SwipeSelectionScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(bottom = 12.dp),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 if (currentPhoto != null) {
                     // Background Next Card Preview
@@ -178,7 +177,7 @@ fun SwipeSelectionScreen(
                                     scaleX = 0.96f
                                     scaleY = 0.96f
                                     alpha = 0.5f
-                                }
+                                },
                         )
                     }
 
@@ -224,12 +223,12 @@ fun SwipeSelectionScreen(
                                         }
                                     }
                                 }
-                            }
+                            },
                     ) {
                         PhotoCardView(
                             photoItem = currentPhoto,
                             libRawBridge = libRawBridge,
-                            scale = zoomScale
+                            scale = zoomScale,
                         )
 
                         // Overlay Indicators
@@ -240,14 +239,14 @@ fun SwipeSelectionScreen(
                                     .align(Alignment.TopStart)
                                     .padding(28.dp)
                                     .rotate(-10f)
-                                    .alpha(alphaValue)
+                                    .alpha(alphaValue),
                             ) {
                                 Text(
                                     text = "ACCEPT",
                                     color = AcceptGreen,
                                     fontWeight = FontWeight.Black,
                                     fontSize = 32.sp,
-                                    letterSpacing = 2.sp
+                                    letterSpacing = 2.sp,
                                 )
                             }
                         }
@@ -259,14 +258,14 @@ fun SwipeSelectionScreen(
                                     .align(Alignment.TopEnd)
                                     .padding(28.dp)
                                     .rotate(10f)
-                                    .alpha(alphaValue)
+                                    .alpha(alphaValue),
                             ) {
                                 Text(
                                     text = "REJECT",
                                     color = RejectRed,
                                     fontWeight = FontWeight.Black,
                                     fontSize = 32.sp,
-                                    letterSpacing = 2.sp
+                                    letterSpacing = 2.sp,
                                 )
                             }
                         }
@@ -277,14 +276,14 @@ fun SwipeSelectionScreen(
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .padding(bottom = 60.dp)
-                                    .alpha(alphaValue)
+                                    .alpha(alphaValue),
                             ) {
                                 Text(
                                     text = "PREVIOUS",
                                     color = UndoPurple,
                                     fontWeight = FontWeight.Black,
                                     fontSize = 24.sp,
-                                    letterSpacing = 2.sp
+                                    letterSpacing = 2.sp,
                                 )
                             }
                         }
@@ -295,14 +294,14 @@ fun SwipeSelectionScreen(
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
                                     .padding(top = 60.dp)
-                                    .alpha(alphaValue)
+                                    .alpha(alphaValue),
                             ) {
                                 Text(
                                     text = "SKIP",
                                     color = SkipYellow,
                                     fontWeight = FontWeight.Black,
                                     fontSize = 24.sp,
-                                    letterSpacing = 2.sp
+                                    letterSpacing = 2.sp,
                                 )
                             }
                         }
@@ -314,26 +313,26 @@ fun SwipeSelectionScreen(
                             .clip(RoundedCornerShape(20.dp))
                             .background(DarkSurface)
                             .border(1.dp, BorderColor, RoundedCornerShape(20.dp)),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
                                 contentDescription = null,
                                 tint = AcceptGreen,
-                                modifier = Modifier.size(64.dp)
+                                modifier = Modifier.size(64.dp),
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
                                 text = "選別が完了しました！",
                                 color = TextPrimary,
                                 fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Button(
                                 onClick = onFinishSelection,
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeon)
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeon),
                             ) {
                                 Text(text = "結果を確認する", color = DarkBackground, fontWeight = FontWeight.Bold)
                             }

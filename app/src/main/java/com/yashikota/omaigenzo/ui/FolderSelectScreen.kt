@@ -25,17 +25,17 @@ import com.yashikota.omaigenzo.ui.theme.*
 @Composable
 fun FolderSelectScreen(
     importProgress: ImportProgress,
-    onSelectFolderClick: () -> Unit
+    onSelectFolderClick: () -> Unit,
 ) {
     Scaffold(
-        containerColor = DarkBackground
+        containerColor = DarkBackground,
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(24.dp),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Column(
                 modifier = Modifier
@@ -44,7 +44,7 @@ fun FolderSelectScreen(
                     .background(DarkSurface)
                     .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
                     .padding(28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 // Logo Icon Group
                 Box(
@@ -53,13 +53,13 @@ fun FolderSelectScreen(
                         .clip(CircleShape)
                         .background(DarkSurfaceVariant)
                         .border(2.dp, PrimaryNeon, CircleShape),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Default.CameraRoll,
                         contentDescription = null,
                         tint = PrimaryNeon,
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(44.dp),
                     )
                 }
 
@@ -70,7 +70,7 @@ fun FolderSelectScreen(
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Black,
                     color = PrimaryNeon,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -79,7 +79,7 @@ fun FolderSelectScreen(
                     text = "高速スワイプ写真選別 & LibRaw現像エンジン",
                     fontSize = 13.sp,
                     color = TextSecondary,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -91,18 +91,18 @@ fun FolderSelectScreen(
                         .clip(RoundedCornerShape(16.dp))
                         .background(DarkSurfaceVariant)
                         .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     FeatureRow(
                         icon = Icons.Default.Swipe,
                         title = "マチアプ風高速スワイプ選別",
-                        subtitle = "👉 KEEP | 👈 REJECT | ☝️ 前の画像へ戻る | 👇 スキップ"
+                        subtitle = "👉 KEEP | 👈 REJECT | ☝️ 前の画像へ戻る | 👇 スキップ",
                     )
                     Divider(color = BorderColor)
                     FeatureRow(
                         icon = Icons.Default.PhotoLibrary,
                         title = "フォルダまるごと安全ローカルコピー",
-                        subtitle = "原本フォルダからアプリ内へコピーして超高速選別"
+                        subtitle = "原本フォルダからアプリ内へコピーして超高速選別",
                     )
                 }
 
@@ -111,27 +111,29 @@ fun FolderSelectScreen(
                 if (importProgress.isImporting) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         LinearProgressIndicator(
                             progress = {
                                 if (importProgress.totalCount > 0) {
                                     importProgress.currentCount.toFloat() / importProgress.totalCount.toFloat()
-                                } else 0f
+                                } else {
+                                    0f
+                                }
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp)
                                 .clip(RoundedCornerShape(4.dp)),
                             color = PrimaryNeon,
-                            trackColor = BorderColor
+                            trackColor = BorderColor,
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = importProgress.message,
                             color = TextPrimary,
                             fontSize = 13.sp,
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
                         )
                     }
                 } else {
@@ -141,19 +143,19 @@ fun FolderSelectScreen(
                             .fillMaxWidth()
                             .height(56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeon),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = RoundedCornerShape(14.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.FolderOpen,
                             contentDescription = null,
-                            tint = DarkBackground
+                            tint = DarkBackground,
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = "写真フォルダを選択して選別開始",
                             color = DarkBackground,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
+                            fontSize = 16.sp,
                         )
                     }
                 }
@@ -166,14 +168,14 @@ fun FolderSelectScreen(
 private fun FeatureRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
-    subtitle: String
+    subtitle: String,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = PrimaryNeon,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(24.dp),
         )
         Spacer(modifier = Modifier.width(12.dp))
         Column {

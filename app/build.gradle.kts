@@ -13,7 +13,8 @@ spotless {
             mapOf(
                 "ktlint_function_naming_ignore_when_annotated_with" to "Composable",
                 "ij_kotlin_name_count_to_use_star_import" to "99",
-                "ij_kotlin_name_count_to_use_star_import_for_members" to "99"
+                "ij_kotlin_name_count_to_use_star_import_for_members" to "99",
+                "ktlint_standard_no-wildcard-imports" to "disabled"
             )
         )
     }

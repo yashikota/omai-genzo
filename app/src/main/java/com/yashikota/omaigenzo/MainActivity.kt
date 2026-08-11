@@ -22,7 +22,7 @@ enum class CurrentScreen {
     FOLDER_SELECT,
     SWIPE_SELECTION,
     GALLERY,
-    COMPLETION
+    COMPLETION,
 }
 
 class MainActivity : ComponentActivity() {
@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
             OmaiGenzoTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = MaterialTheme.colorScheme.background,
                 ) {
                     AppMainContent(libRawBridge = libRawBridge, importManager = importManager)
                 }
@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppMainContent(
     libRawBridge: LibRawBridge,
-    importManager: FolderImportManager
+    importManager: FolderImportManager,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -67,7 +67,7 @@ fun AppMainContent(
     val importProgress by importManager.importProgress.collectAsStateWithLifecycle()
 
     val folderPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree()
+        contract = ActivityResultContracts.OpenDocumentTree(),
     ) { uri: Uri? ->
         if (uri != null) {
             coroutineScope.launch {
@@ -82,7 +82,7 @@ fun AppMainContent(
                     Toast.makeText(
                         context,
                         "選択したフォルダに対象画像がありませんでした",
-                        Toast.LENGTH_LONG
+                        Toast.LENGTH_LONG,
                     ).show()
                 }
             }
@@ -90,7 +90,7 @@ fun AppMainContent(
     }
 
     val exportFolderLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree()
+        contract = ActivityResultContracts.OpenDocumentTree(),
     ) { uri: Uri? ->
         if (uri != null) {
             coroutineScope.launch {
@@ -98,7 +98,7 @@ fun AppMainContent(
                 Toast.makeText(
                     context,
                     "ACCEPT 写真 $count 枚を正常に保存・書き出しました！",
-                    Toast.LENGTH_LONG
+                    Toast.LENGTH_LONG,
                 ).show()
             }
         }
@@ -118,7 +118,7 @@ fun AppMainContent(
                 importProgress = importProgress,
                 onSelectFolderClick = {
                     folderPickerLauncher.launch(null)
-                }
+                },
             )
         }
 
@@ -158,7 +158,7 @@ fun AppMainContent(
                 },
                 onFinishSelection = {
                     currentScreen = CurrentScreen.COMPLETION
-                }
+                },
             )
         }
 
@@ -177,7 +177,7 @@ fun AppMainContent(
                 },
                 onExportAcceptPhotos = {
                     exportFolderLauncher.launch(null)
-                }
+                },
             )
         }
 
@@ -194,7 +194,7 @@ fun AppMainContent(
                 },
                 onExportAcceptPhotos = {
                     exportFolderLauncher.launch(null)
-                }
+                },
             )
         }
     }

@@ -32,7 +32,7 @@ fun PhotoCardView(
     libRawBridge: LibRawBridge,
     modifier: Modifier = Modifier,
     scale: Float = 1f,
-    showExifOverlay: Boolean = true
+    showExifOverlay: Boolean = true,
 ) {
     var bitmap by remember(photoItem.id) { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember(photoItem.id) { mutableStateOf(true) }
@@ -42,7 +42,7 @@ fun PhotoCardView(
         val loadedBitmap = libRawBridge.loadPhotoBitmap(
             filePath = photoItem.fastDisplayPath,
             isRaw = photoItem.rawPath != null && photoItem.jpgPath == null,
-            fastMode = true
+            fastMode = true,
         )
         bitmap = loadedBitmap
         isLoading = false
@@ -53,12 +53,12 @@ fun PhotoCardView(
             .fillMaxSize()
             .clip(RoundedCornerShape(20.dp))
             .background(DarkSurfaceVariant)
-            .border(1.dp, BorderColor, RoundedCornerShape(20.dp))
+            .border(1.dp, BorderColor, RoundedCornerShape(20.dp)),
     ) {
         if (isLoading) {
             Box(
                 modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = PrimaryNeon, modifier = Modifier.size(40.dp))
@@ -66,7 +66,7 @@ fun PhotoCardView(
                     Text(
                         text = if (photoItem.isRawFile()) "LibRaw 現像中..." else "画像をロード中...",
                         color = TextSecondary,
-                        fontSize = 13.sp
+                        fontSize = 13.sp,
                     )
                 }
             }
@@ -80,25 +80,25 @@ fun PhotoCardView(
                     .graphicsLayer {
                         scaleX = scale
                         scaleY = scale
-                    }
+                    },
             )
         } else {
             Box(
                 modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
                         imageVector = Icons.Default.Image,
                         contentDescription = null,
                         tint = TextTertiary,
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(48.dp),
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "画像を読み込めませんでした",
                         color = TextSecondary,
-                        fontSize = 14.sp
+                        fontSize = 14.sp,
                     )
                 }
             }
@@ -112,10 +112,10 @@ fun PhotoCardView(
                     .align(Alignment.BottomCenter)
                     .background(
                         Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
-                        )
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)),
+                        ),
                     )
-                    .padding(16.dp)
+                    .padding(16.dp),
             ) {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -123,14 +123,14 @@ fun PhotoCardView(
                             imageVector = Icons.Default.CameraAlt,
                             contentDescription = null,
                             tint = PrimaryNeon,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "${photoItem.exifInfo.make} ${photoItem.exifInfo.model}".trim(),
                             color = TextPrimary,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp
+                            fontSize = 13.sp,
                         )
                     }
 
@@ -167,7 +167,7 @@ private fun ExifChip(label: String, value: String) {
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
             .background(Color.White.copy(alpha = 0.12f))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
         Text(text = "$label ", color = TextSecondary, fontSize = 11.sp)
         Text(text = value, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp)

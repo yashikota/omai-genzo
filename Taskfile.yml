@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  GRADLEW: '{{if eq OS "windows"}}.\gradlew.bat{{else}}./gradlew{{end}}'
+  GRADLEW: '{{if eq OS "windows"}}gradlew.bat{{else}}./gradlew{{end}}'
 
 tasks:
   default:
@@ -28,9 +28,14 @@ tasks:
       - '{{.GRADLEW}} testAll --no-daemon'
 
   build:
-    desc: Build Debug APK
+    desc: Build Debug APK (.apk)
     cmds:
       - '{{.GRADLEW}} assembleDebug --no-daemon'
+
+  bundle:
+    desc: Build Android App Bundle (.aab)
+    cmds:
+      - '{{.GRADLEW}} bundleDebug --no-daemon'
 
   install:
     desc: Build and install Debug APK to connected Android device or emulator
@@ -49,3 +54,4 @@ tasks:
       - task: lint
       - task: test
       - task: build
+      - task: bundle

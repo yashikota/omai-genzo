@@ -27,7 +27,7 @@ fun CompletionScreen(
     photos: List<PhotoItem>,
     onRestartSelection: () -> Unit,
     onOpenGallery: () -> Unit,
-    onExportAcceptPhotos: () -> Unit
+    onExportAcceptPhotos: () -> Unit,
 ) {
     val totalCount = photos.size
     val acceptCount = photos.count { it.selectionState == SelectionState.ACCEPT }
@@ -35,14 +35,14 @@ fun CompletionScreen(
     val acceptPercentage = if (totalCount > 0) (acceptCount * 100) / totalCount else 0
 
     Scaffold(
-        containerColor = DarkBackground
+        containerColor = DarkBackground,
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(24.dp),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Column(
                 modifier = Modifier
@@ -51,13 +51,13 @@ fun CompletionScreen(
                     .background(DarkSurface)
                     .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
                     .padding(28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Icon(
                     imageVector = Icons.Default.Stars,
                     contentDescription = null,
                     tint = PrimaryNeon,
-                    modifier = Modifier.size(72.dp)
+                    modifier = Modifier.size(72.dp),
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -67,7 +67,7 @@ fun CompletionScreen(
                     color = TextPrimary,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -75,7 +75,7 @@ fun CompletionScreen(
                 Text(
                     text = "全 $totalCount 枚の選別が終わりました。",
                     color = TextSecondary,
-                    fontSize = 14.sp
+                    fontSize = 14.sp,
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -86,7 +86,7 @@ fun CompletionScreen(
                         .clip(RoundedCornerShape(16.dp))
                         .background(DarkSurfaceVariant)
                         .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(text = "$acceptCount 枚", color = AcceptGreen, fontWeight = FontWeight.Bold, fontSize = 20.sp)
@@ -97,7 +97,7 @@ fun CompletionScreen(
                         modifier = Modifier
                             .width(1.dp)
                             .height(40.dp)
-                            .background(BorderColor)
+                            .background(BorderColor),
                     )
 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -114,7 +114,7 @@ fun CompletionScreen(
                         .fillMaxWidth()
                         .height(52.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeon),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
                 ) {
                     Icon(imageVector = Icons.Default.Refresh, contentDescription = null, tint = DarkBackground)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -122,7 +122,7 @@ fun CompletionScreen(
                         text = "最初から選別し直す",
                         color = DarkBackground,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        fontSize = 16.sp,
                     )
                 }
 
@@ -134,7 +134,7 @@ fun CompletionScreen(
                         .fillMaxWidth()
                         .height(52.dp),
                     shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryNeon)
+                    border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryNeon),
                 ) {
                     Icon(imageVector = Icons.Default.GridView, contentDescription = null, tint = PrimaryNeon)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -142,7 +142,7 @@ fun CompletionScreen(
                         text = "ギャラリーで結果を確認",
                         color = PrimaryNeon,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        fontSize = 16.sp,
                     )
                 }
 
@@ -154,7 +154,7 @@ fun CompletionScreen(
                         .fillMaxWidth()
                         .height(52.dp),
                     shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AcceptGreen)
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AcceptGreen),
                 ) {
                     Icon(imageVector = Icons.Default.Download, contentDescription = null, tint = AcceptGreen)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -162,7 +162,7 @@ fun CompletionScreen(
                         text = "ACCEPT 写真を書き出す ($acceptCount 枚)",
                         color = AcceptGreen,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
+                        fontSize = 15.sp,
                     )
                 }
             }

@@ -38,7 +38,7 @@ fun GalleryScreen(
     libRawBridge: LibRawBridge,
     onBackToSwipe: () -> Unit,
     onPhotoSelectionChanged: (PhotoItem, SelectionState) -> Unit,
-    onExportAcceptPhotos: () -> Unit
+    onExportAcceptPhotos: () -> Unit,
 ) {
     var selectedFilter by remember { mutableStateOf(FilterCategory.ALL) }
     var selectedPhotoForDetail by remember { mutableStateOf<PhotoItem?>(null) }
@@ -59,7 +59,7 @@ fun GalleryScreen(
                     Text(
                         text = "選別結果ギャラリー",
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        color = TextPrimary,
                     )
                 },
                 navigationIcon = {
@@ -72,16 +72,16 @@ fun GalleryScreen(
                         Icon(imageVector = Icons.Default.Download, contentDescription = "書き出し", tint = AcceptGreen)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground),
             )
         },
-        containerColor = DarkBackground
+        containerColor = DarkBackground,
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 12.dp)
+                .padding(horizontal = 12.dp),
         ) {
             // Filter Tab Bar
             ScrollableTabRow(
@@ -89,7 +89,7 @@ fun GalleryScreen(
                 containerColor = DarkBackground,
                 contentColor = PrimaryNeon,
                 edgePadding = 0.dp,
-                divider = {}
+                divider = {},
             ) {
                 FilterCategory.values().forEach { category ->
                     val count = when (category) {
@@ -104,9 +104,9 @@ fun GalleryScreen(
                         text = {
                             Text(
                                 text = "${category.name} ($count)",
-                                fontWeight = if (selectedFilter == category) FontWeight.Bold else FontWeight.Normal
+                                fontWeight = if (selectedFilter == category) FontWeight.Bold else FontWeight.Normal,
                             )
-                        }
+                        },
                     )
                 }
             }
@@ -117,7 +117,7 @@ fun GalleryScreen(
             if (filteredPhotos.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(text = "該当する写真がありません", color = TextSecondary, fontSize = 14.sp)
                 }
@@ -126,13 +126,13 @@ fun GalleryScreen(
                     columns = GridCells.Adaptive(minSize = 110.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
                 ) {
                     items(filteredPhotos, key = { it.id }) { photo ->
                         GalleryItemCard(
                             photoItem = photo,
                             libRawBridge = libRawBridge,
-                            onClick = { selectedPhotoForDetail = photo }
+                            onClick = { selectedPhotoForDetail = photo },
                         )
                     }
                 }
@@ -153,7 +153,7 @@ fun GalleryScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(text = photo.displayFileName, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         Text(text = photo.displayBadge, fontSize = 12.sp, color = PrimaryNeon, fontWeight = FontWeight.Bold)
@@ -166,12 +166,12 @@ fun GalleryScreen(
                                 .fillMaxWidth()
                                 .height(300.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(DarkSurfaceVariant)
+                                .background(DarkSurfaceVariant),
                         ) {
                             PhotoCardView(
                                 photoItem = photo,
                                 libRawBridge = libRawBridge,
-                                showExifOverlay = true
+                                showExifOverlay = true,
                             )
                         }
 
@@ -179,7 +179,7 @@ fun GalleryScreen(
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
+                            horizontalArrangement = Arrangement.SpaceEvenly,
                         ) {
                             Button(
                                 onClick = {
@@ -187,14 +187,14 @@ fun GalleryScreen(
                                     selectedPhotoForDetail = photo.copy(selectionState = SelectionState.ACCEPT)
                                 },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (photo.selectionState == SelectionState.ACCEPT) AcceptGreen else DarkSurface
+                                    containerColor = if (photo.selectionState == SelectionState.ACCEPT) AcceptGreen else DarkSurface,
                                 ),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(8.dp),
                             ) {
                                 Text(
                                     text = "ACCEPT",
                                     color = if (photo.selectionState == SelectionState.ACCEPT) DarkBackground else AcceptGreen,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
                                 )
                             }
 
@@ -204,21 +204,21 @@ fun GalleryScreen(
                                     selectedPhotoForDetail = photo.copy(selectionState = SelectionState.REJECT)
                                 },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (photo.selectionState == SelectionState.REJECT) RejectRed else DarkSurface
+                                    containerColor = if (photo.selectionState == SelectionState.REJECT) RejectRed else DarkSurface,
                                 ),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(8.dp),
                             ) {
                                 Text(
                                     text = "REJECT",
                                     color = if (photo.selectionState == SelectionState.REJECT) TextPrimary else RejectRed,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
                                 )
                             }
                         }
                     }
                 },
                 containerColor = DarkSurface,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
             )
         }
     }
@@ -228,7 +228,7 @@ fun GalleryScreen(
 private fun GalleryItemCard(
     photoItem: PhotoItem,
     libRawBridge: LibRawBridge,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     var thumbnail by remember(photoItem.id) { mutableStateOf<Bitmap?>(null) }
 
@@ -236,7 +236,7 @@ private fun GalleryItemCard(
         thumbnail = libRawBridge.loadPhotoBitmap(
             filePath = photoItem.fastDisplayPath,
             isRaw = photoItem.rawPath != null && photoItem.jpgPath == null,
-            fastMode = true
+            fastMode = true,
         )
     }
 
@@ -252,16 +252,16 @@ private fun GalleryItemCard(
                     SelectionState.REJECT -> RejectRed
                     SelectionState.PENDING -> BorderColor
                 },
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
             )
-            .clickable { onClick() }
+            .clickable { onClick() },
     ) {
         if (thumbnail != null) {
             Image(
                 bitmap = thumbnail!!.asImageBitmap(),
                 contentDescription = photoItem.displayFileName,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
             )
         } else {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -279,9 +279,9 @@ private fun GalleryItemCard(
                         SelectionState.ACCEPT -> AcceptGreen
                         SelectionState.REJECT -> RejectRed
                         SelectionState.PENDING -> Color.Gray
-                    }
+                    },
                 )
-                .padding(4.dp)
+                .padding(4.dp),
         ) {
             Icon(
                 imageVector = when (photoItem.selectionState) {
@@ -291,7 +291,7 @@ private fun GalleryItemCard(
                 },
                 contentDescription = null,
                 tint = TextPrimary,
-                modifier = Modifier.size(12.dp)
+                modifier = Modifier.size(12.dp),
             )
         }
 
@@ -301,13 +301,13 @@ private fun GalleryItemCard(
                 .padding(6.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(Color.Black.copy(alpha = 0.75f))
-                .padding(horizontal = 4.dp, vertical = 2.dp)
+                .padding(horizontal = 4.dp, vertical = 2.dp),
         ) {
             Text(
                 text = photoItem.displayBadge,
                 color = if (photoItem.isRawFile()) PrimaryNeon else AcceptGreen,
                 fontSize = 9.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
         }
     }
