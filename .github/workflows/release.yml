@@ -39,6 +39,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          submodules: recursive
 
       - name: Setup svu
         if: github.event_name == 'workflow_dispatch'
