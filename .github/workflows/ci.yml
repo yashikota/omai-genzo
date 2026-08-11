@@ -5,6 +5,8 @@ on:
     branches:
       - main
   pull_request:
+    branches:
+      - main
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -12,7 +14,7 @@ concurrency:
 
 jobs:
   ci:
-    name: Check
+    name: Test & Lint Check
     runs-on: ubuntu-latest
 
     permissions:
@@ -20,34 +22,25 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v4
 
       - name: Setup Java 21
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.local/share/aquaproj-aqua
-          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
-          restore-keys: |
-            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
-
       - name: Setup aqua
-        uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
-        with:
-          aqua_version: v2.45.0
+        uses: aquaproj/aqua-installer@v3.1.1
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        uses: gradle/actions/setup-gradle@v3
 
-      - name: Run Formatter & Lint Check
-        run: task lint
+      - name: Run Lint Check
+        run: aqua exec -- task lint
 
       - name: Run Unit Tests
-        run: task test
+        run: aqua exec -- task test
 
       - name: Build Debug APK
-        run: task build
+        run: aqua exec -- task build
