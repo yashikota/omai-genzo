@@ -103,3 +103,18 @@ jobs:
 
       - name: Build Debug APK
         run: aqua exec -- task build
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Output APK Summary
+        run: |
+          echo "### 📱 Debug APK Download" >> $GITHUB_STEP_SUMMARY
+          echo "The Debug APK has been built and uploaded as a build artifact." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 **Artifact Name**: \`debug-apk\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔗 **Download Link**: [Download Debug APK](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts)" >> $GITHUB_STEP_SUMMARY
