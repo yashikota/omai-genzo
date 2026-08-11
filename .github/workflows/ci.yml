@@ -31,7 +31,7 @@ jobs:
           java-version: '21'
 
       - name: Setup aqua
-        uses: aquaproj/aqua-installer@v3.1.1
+        uses: aquaproj/aqua-installer@v3.1.0
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
@@ -57,7 +57,7 @@ jobs:
           java-version: '21'
 
       - name: Setup aqua
-        uses: aquaproj/aqua-installer@v3.1.1
+        uses: aquaproj/aqua-installer@v3.1.0
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
@@ -84,7 +84,7 @@ jobs:
           java-version: '21'
 
       - name: Setup aqua
-        uses: aquaproj/aqua-installer@v3.1.1
+        uses: aquaproj/aqua-installer@v3.1.0
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
