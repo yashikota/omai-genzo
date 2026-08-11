@@ -17,9 +17,10 @@ add_library(
     ${LIBRAW_SOURCES}
 )
 
-# Header include paths
+# Header include paths (Include CMAKE_CURRENT_SOURCE_DIR for cross-platform libraw/libraw.h resolving)
 target_include_directories(
     native-lib PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/libraw"
     "${CMAKE_CURRENT_SOURCE_DIR}/libraw/libraw"
 )
@@ -45,4 +46,3 @@ target_link_options(
     native-lib PRIVATE
     "-Wl,-z,max-page-size=16384"
 )
-
