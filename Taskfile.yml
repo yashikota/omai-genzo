@@ -37,16 +37,6 @@ tasks:
     cmds:
       - '{{.GRADLEW}} assembleRelease --no-daemon'
 
-  bundle:
-    desc: Build Debug Android App Bundle (.aab)
-    cmds:
-      - '{{.GRADLEW}} bundleDebug --no-daemon'
-
-  bundle:release:
-    desc: Build Release Android App Bundle (.aab)
-    cmds:
-      - '{{.GRADLEW}} bundleRelease --no-daemon'
-
   install:
     desc: Build and install Debug APK to connected Android device or emulator
     cmds:
@@ -64,4 +54,3 @@ tasks:
       - task: lint
       - task: test
       - task: build
-      - task: bundle
