@@ -1,0 +1,35 @@
+# Android & NDK Build Outputs
+build/
+app/build/
+**/build/
+app/.cxx/
+.gradle/
+.kotlin/
+captures/
+
+# Local configuration file (contains SDK paths specific to local user)
+local.properties
+
+# Android Studio / IntelliJ IDE files
+.idea/
+*.iml
+*.iws
+*.ipr
+.navigation/
+
+# Native & Binary Outputs
+*.apk
+*.aab
+*.dex
+*.so
+*.o
+*.a
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Log files
+*.log

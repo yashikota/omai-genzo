@@ -1,0 +1,51 @@
+version: '3'
+
+vars:
+  GRADLEW: '{{if eq OS "windows"}}.\gradlew.bat{{else}}./gradlew{{end}}'
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  format:
+    aliases: [fmt]
+    desc: Run Code Formatter (Spotless + ktlint auto-fix)
+    cmds:
+      - '{{.GRADLEW}} format --no-daemon'
+
+  lint:
+    aliases: [check, linter]
+    desc: Run Code Linter (Spotless Check)
+    cmds:
+      - '{{.GRADLEW}} lintCheck --no-daemon'
+
+  test:
+    aliases: [tester]
+    desc: Run Unit Tests
+    cmds:
+      - '{{.GRADLEW}} testAll --no-daemon'
+
+  build:
+    desc: Build Debug APK
+    cmds:
+      - '{{.GRADLEW}} assembleDebug --no-daemon'
+
+  install:
+    desc: Build and install Debug APK to connected Android device or emulator
+    cmds:
+      - '{{.GRADLEW}} installDebug --no-daemon'
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - '{{.GRADLEW}} clean --no-daemon'
+
+  all:
+    desc: Run Format -> Lint -> Test -> Build in sequence
+    cmds:
+      - task: format
+      - task: lint
+      - task: test
+      - task: build
