@@ -35,14 +35,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: Setup svu
         if: github.event_name == 'workflow_dispatch'
-        uses: freerangebytes/setup-svu@v0.2.1
+        uses: freerangebytes/setup-svu@3dcc2ead4b6be1287f9bfe2ac4764a826c110a4f # v0.2.1
 
       - name: Create release tag
         if: github.event_name == 'workflow_dispatch'
@@ -65,18 +65,16 @@ jobs:
           echo "Created release tag: $version"
 
       - name: Setup Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup aqua
-        uses: aquaproj/aqua-installer@v3.1.0
-        with:
-          aqua_version: v2.45.0
+        uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
 
       - name: Build Debug APK for Release
         run: aqua exec -- task build
@@ -99,7 +97,7 @@ jobs:
           fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: omai-genzo-*.apk
           tag_name: ${{ github.event_name == 'workflow_dispatch' && steps.tag.outputs.version || github.ref_name }}
