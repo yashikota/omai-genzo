@@ -24,8 +24,9 @@ import com.yashikota.omaigenzo.ui.theme.*
 
 @Composable
 fun FolderSelectScreen(
-    importProgress: ImportProgress,
     onSelectFolderClick: () -> Unit,
+    isImporting: Boolean = false,
+    importProgress: ImportProgress = ImportProgress(),
 ) {
     Scaffold(
         containerColor = DarkBackground,
@@ -98,7 +99,7 @@ fun FolderSelectScreen(
                         title = "マチアプ風高速スワイプ選別",
                         subtitle = "👉 KEEP | 👈 REJECT | ☝️ 前の画像へ戻る | 👇 スキップ",
                     )
-                    Divider(color = BorderColor)
+                    HorizontalDivider(color = BorderColor)
                     FeatureRow(
                         icon = Icons.Default.PhotoLibrary,
                         title = "フォルダまるごと安全ローカルコピー",
@@ -108,19 +109,12 @@ fun FolderSelectScreen(
 
                 Spacer(modifier = Modifier.height(32.dp))
 
-                if (importProgress.isImporting) {
+                if (isImporting || importProgress.isImporting) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         LinearProgressIndicator(
-                            progress = {
-                                if (importProgress.totalCount > 0) {
-                                    importProgress.currentCount.toFloat() / importProgress.totalCount.toFloat()
-                                } else {
-                                    0f
-                                }
-                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp)
@@ -130,7 +124,7 @@ fun FolderSelectScreen(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = importProgress.message,
+                            text = if (importProgress.message.isNotEmpty()) importProgress.message else "写真の取り込み・コピー中...",
                             color = TextPrimary,
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center,

@@ -25,9 +25,12 @@ import com.yashikota.omaigenzo.ui.theme.*
 @Composable
 fun CompletionScreen(
     photos: List<PhotoItem>,
-    onRestartSelection: () -> Unit,
-    onOpenGallery: () -> Unit,
-    onExportAcceptPhotos: () -> Unit,
+    onResetClick: () -> Unit = {},
+    onRestartSelection: () -> Unit = onResetClick,
+    onGalleryClick: () -> Unit = {},
+    onOpenGallery: () -> Unit = onGalleryClick,
+    onExportClick: () -> Unit = {},
+    onExportAcceptPhotos: () -> Unit = onExportClick,
 ) {
     val totalCount = photos.size
     val acceptCount = photos.count { it.selectionState == SelectionState.ACCEPT }

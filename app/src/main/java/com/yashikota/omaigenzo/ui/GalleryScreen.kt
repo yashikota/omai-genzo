@@ -37,8 +37,10 @@ fun GalleryScreen(
     photos: List<PhotoItem>,
     libRawBridge: LibRawBridge,
     onBackToSwipe: () -> Unit,
-    onPhotoSelectionChanged: (PhotoItem, SelectionState) -> Unit,
-    onExportAcceptPhotos: () -> Unit,
+    onSelectionChanged: (String, SelectionState) -> Unit = { _, _ -> },
+    onPhotoSelectionChanged: (PhotoItem, SelectionState) -> Unit = { photo, state -> onSelectionChanged(photo.id, state) },
+    onExportClick: () -> Unit = {},
+    onExportAcceptPhotos: () -> Unit = onExportClick,
 ) {
     var selectedFilter by remember { mutableStateOf(FilterCategory.ALL) }
     var selectedPhotoForDetail by remember { mutableStateOf<PhotoItem?>(null) }
