@@ -225,11 +225,19 @@ fun SwipeSelectionScreen(
                                 }
                             },
                     ) {
-                        PhotoCardView(
-                            photoItem = currentPhoto,
-                            libRawBridge = libRawBridge,
-                            scale = zoomScale,
-                        )
+                        if (currentPhoto.isRawFile()) {
+                            FastRawGpuViewer(
+                                photo = currentPhoto,
+                                modifier = Modifier.fillMaxSize(),
+                                onZoomChanged = { zoomScale = it },
+                            )
+                        } else {
+                            PhotoCardView(
+                                photoItem = currentPhoto,
+                                libRawBridge = libRawBridge,
+                                scale = zoomScale,
+                            )
+                        }
 
                         // Overlay Indicators
                         if (offsetX > 40f && zoomScale <= 1.05f) {

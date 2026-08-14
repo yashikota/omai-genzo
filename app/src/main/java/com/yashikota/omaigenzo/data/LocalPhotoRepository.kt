@@ -12,6 +12,7 @@ import java.util.ArrayDeque
 
 class LocalPhotoRepository(
     private val context: Context,
+    private val zeroCopyScanner: ZeroCopyFolderScanner = ZeroCopyFolderScanner(context),
     private val importManager: FolderImportManager = FolderImportManager(context),
 ) : PhotoRepository {
 
@@ -24,8 +25,8 @@ class LocalPhotoRepository(
     private val historyStack = ArrayDeque<Pair<String, SelectionState>>()
 
     override suspend fun importSession(folderUri: Uri): Result<Unit> = try {
-        val (_, imported) = importManager.importFolderFromUri(folderUri)
-        photosState.value = imported
+        val scanned = zeroCopyScanner.scanTreeUri(folderUri)
+        photosState.value = scanned
         historyStack.clear()
         lastChangeState.value = System.currentTimeMillis()
         Result.success(Unit)
