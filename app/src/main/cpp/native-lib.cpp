@@ -2,7 +2,9 @@
 #include <string>
 #include <android/log.h>
 #include <android/bitmap.h>
+#include <android/native_window_jni.h>
 #include "libraw/libraw.h"
+#include "FastGpuEngine.h"
 
 #define LOG_TAG "NativeLibRaw"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -180,4 +182,86 @@ Java_com_yashikota_omaigenzo_LibRawBridge_decodeFullRaw(
     return bitmap;
 }
 
+// -----------------------------------------------------------------------------
+// FastGpuBridge JNI Bindings (GPU-First 120 FPS Rendering)
+// -----------------------------------------------------------------------------
+
+JNIEXPORT jlong JNICALL
+Java_com_yashikota_omaigenzo_FastGpuBridge_createEngine(JNIEnv *env, jobject thiz, jobject surface) {
+    if (!surface) return 0;
+    ANativeWindow *window = ANativeWindow_fromSurface(env, surface);
+    if (!window) return 0;
+
+    auto *engine = new omaigenzo::FastGpuEngine();
+    if (!engine->init(window)) {
+        delete engine;
+        return 0;
+    }
+    return reinterpret_cast<jlong>(engine);
 }
+
+JNIEXPORT void JNICALL
+Java_com_yashikota_omaigenzo_FastGpuBridge_destroyEngine(JNIEnv *env, jobject thiz, jlong engineHandle) {
+    if (engineHandle != 0) {
+        auto *engine = reinterpret_cast<omaigenzo::FastGpuEngine*>(engineHandle);
+        delete engine;
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_yashikota_omaigenzo_FastGpuBridge_resize(JNIEnv *env, jobject thiz, jlong engineHandle, jint width, jint height) {
+    if (engineHandle != 0) {
+        reinterpret_cast<omaigenzo::FastGpuEngine*>(engineHandle)->resize(width, height);
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_yashikota_omaigenzo_FastGpuBridge_loadPhotoFromPath(JNIEnv *env, jobject thiz, jlong engineHandle, jstring filePath, jint slotIndex) {
+    if (engineHandle != 0 && filePath != nullptr) {
+        const char *path = env->GetStringUTFChars(filePath, nullptr);
+        bool success = reinterpret_cast<omaigenzo::FastGpuEngine*>(engineHandle)->loadPhotoFromPath(path, slotIndex);
+        env->ReleaseStringUTFChars(filePath, path);
+        return success ? JNI_TRUE : JNI_FALSE;
+    }
+    return JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_yashikota_omaigenzo_FastGpuBridge_loadPhotoFromFd(JNIEnv *env, jobject thiz, jlong engineHandle, jint fd, jint slotIndex) {
+    if (engineHandle != 0) {
+        bool success = reinterpret_cast<omaigenzo::FastGpuEngine*>(engineHandle)->loadPhotoFromFd(fd, slotIndex);
+        return success ? JNI_TRUE : JNI_FALSE;
+    }
+    return JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_yashikota_omaigenzo_FastGpuBridge_setActiveSlot(JNIEnv *env, jobject thiz, jlong engineHandle, jint slotIndex) {
+    if (engineHandle != 0) {
+        reinterpret_cast<omaigenzo::FastGpuEngine*>(engineHandle)->setActiveSlot(slotIndex);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_yashikota_omaigenzo_FastGpuBridge_updateTransform(JNIEnv *env, jobject thiz, jlong engineHandle, jfloat scale, jfloat panX, jfloat panY) {
+    if (engineHandle != 0) {
+        reinterpret_cast<omaigenzo::FastGpuEngine*>(engineHandle)->setTransform(scale, panX, panY);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_yashikota_omaigenzo_FastGpuBridge_updateExposure(JNIEnv *env, jobject thiz, jlong engineHandle, jfloat exposureEV) {
+    if (engineHandle != 0) {
+        reinterpret_cast<omaigenzo::FastGpuEngine*>(engineHandle)->setExposure(exposureEV);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_yashikota_omaigenzo_FastGpuBridge_renderFrame(JNIEnv *env, jobject thiz, jlong engineHandle) {
+    if (engineHandle != 0) {
+        reinterpret_cast<omaigenzo::FastGpuEngine*>(engineHandle)->render();
+    }
+}
+
+}
+

@@ -24,6 +24,8 @@ data class PhotoItem(
     val baseName: String,
     val rawPath: String? = null,
     val jpgPath: String? = null,
+    val rawUriString: String? = null,
+    val jpgUriString: String? = null,
     val rawExtension: String = "",
     val jpgExtension: String = "",
     val fileSize: Long = 0L,
@@ -38,12 +40,12 @@ data class PhotoItem(
         get() = if (rawExtension.isNotEmpty()) rawExtension.uppercase() else jpgExtension.uppercase()
 
     val primaryPath: String
-        get() = rawPath ?: jpgPath ?: ""
+        get() = rawPath ?: jpgPath ?: rawUriString ?: jpgUriString ?: ""
 
     val fastDisplayPath: String
-        get() = jpgPath ?: rawPath ?: ""
+        get() = jpgPath ?: rawPath ?: jpgUriString ?: rawUriString ?: ""
 
-    fun isRawFile(): Boolean = rawPath != null
+    fun isRawFile(): Boolean = rawPath != null || rawUriString != null
 }
 
 data class SessionSummary(

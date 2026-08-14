@@ -9,11 +9,12 @@ file(GLOB_RECURSE LIBRAW_SOURCES
 # Exclude placeholder _ph.cpp files that cause duplicate symbols
 list(FILTER LIBRAW_SOURCES EXCLUDE REGEX ".*_ph\\.cpp$")
 
-# Native shared library containing LibRaw and JNI wrappers
+# Native shared library containing LibRaw, FastGpuEngine, and JNI wrappers
 add_library(
     native-lib
     SHARED
     native-lib.cpp
+    FastGpuEngine.cpp
     ${LIBRAW_SOURCES}
 )
 
@@ -31,14 +32,20 @@ target_compile_definitions(
     LIBRAW_NOTHREADS
 )
 
-# Android specific libraries to link (log for logging, jnigraphics for direct Bitmap pixel access if needed)
+# Android specific libraries to link
 find_library(log-lib log)
 find_library(jnigraphics-lib jnigraphics)
+find_library(gles3-lib GLESv3)
+find_library(egl-lib EGL)
+find_library(android-lib android)
 
 target_link_libraries(
     native-lib
     ${log-lib}
     ${jnigraphics-lib}
+    ${gles3-lib}
+    ${egl-lib}
+    ${android-lib}
 )
 
 # Enforce 16 KB page size alignment for Android 15+ (API 35+) compatibility
