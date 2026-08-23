@@ -18,7 +18,10 @@ class SuspendSingleFlight<K : Any, V> {
                 leader = true
             }
         }
-        if (!leader) return result.await()
+        if (!leader) {
+            PerfLogger.event("single_flight_join", "\"key\":\"${PerfLogger.escape(key.toString())}\"")
+            return result.await()
+        }
 
         return try {
             producer().also(result::complete)

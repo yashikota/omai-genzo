@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraRoll
 import androidx.compose.material.icons.filled.FolderOpen
@@ -27,6 +28,7 @@ fun FolderSelectScreen(
     onSelectFolderClick: () -> Unit,
     isImporting: Boolean = false,
     importProgress: ImportProgress = ImportProgress(),
+    logPath: String = "",
 ) {
     Scaffold(
         containerColor = DarkBackground,
@@ -150,6 +152,17 @@ fun FolderSelectScreen(
                             color = DarkBackground,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
+                        )
+                    }
+                }
+                if (logPath.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SelectionContainer {
+                        Text(
+                            text = "性能ログ: $logPath\nLogcatタグ: OmaiPerf",
+                            color = TextTertiary,
+                            fontSize = 9.sp,
+                            textAlign = TextAlign.Center,
                         )
                     }
                 }

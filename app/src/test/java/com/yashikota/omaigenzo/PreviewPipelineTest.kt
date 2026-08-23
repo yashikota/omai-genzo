@@ -1,6 +1,7 @@
 package com.yashikota.omaigenzo
 
 import com.yashikota.omaigenzo.data.ByteBudgetLruCache
+import com.yashikota.omaigenzo.data.PerfLogger
 import com.yashikota.omaigenzo.data.PreviewMetrics
 import com.yashikota.omaigenzo.data.PreviewSizing
 import com.yashikota.omaigenzo.data.SuspendSingleFlight
@@ -89,5 +90,10 @@ class PreviewPipelineTest {
         assertEquals(2L, snapshot.decodes)
         assertEquals(3.0, snapshot.averageDecodeMillis, 0.001)
         assertEquals(4_000_000L, snapshot.maxDecodeNanos)
+    }
+
+    @Test
+    fun performanceLogEscapesFullPathsAndControlCharacters() {
+        assertEquals("C:\\\\RAW\\\"private\\nfile.ARW", PerfLogger.escape("C:\\RAW\"private\nfile.ARW"))
     }
 }

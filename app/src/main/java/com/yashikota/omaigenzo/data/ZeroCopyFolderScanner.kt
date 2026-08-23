@@ -2,6 +2,7 @@ package com.yashikota.omaigenzo.data
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import com.yashikota.omaigenzo.PhotoItem
 import com.yashikota.omaigenzo.PhotoType
@@ -25,6 +26,8 @@ class ZeroCopyFolderScanner(private val context: Context? = null) {
     }
 
     suspend fun scanTreeUri(treeUri: Uri): List<PhotoItem> = withContext(Dispatchers.IO) {
+        val startedAt = SystemClock.elapsedRealtimeNanos()
+        PerfLogger.event("scan_start", "\"uri\":\"${PerfLogger.escape(treeUri.toString())}\"")
         val ctx = context ?: return@withContext emptyList()
         val entries = mutableListOf<ScannedFileEntry>()
         val resolver = ctx.contentResolver
@@ -54,7 +57,13 @@ class ZeroCopyFolderScanner(private val context: Context? = null) {
                 )
             }
         }
-        groupAndCreatePhotoItems(entries)
+        groupAndCreatePhotoItems(entries).also { photos ->
+            PerfLogger.event(
+                "scan_end",
+                "\"uri\":\"${PerfLogger.escape(treeUri.toString())}\",\"files\":${entries.size}," +
+                    "\"photos\":${photos.size},\"duration_ns\":${SystemClock.elapsedRealtimeNanos() - startedAt}",
+            )
+        }
     }
 
     fun groupAndCreatePhotoItems(entries: List<ScannedFileEntry>): List<PhotoItem> {

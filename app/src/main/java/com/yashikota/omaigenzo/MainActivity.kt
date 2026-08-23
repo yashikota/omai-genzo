@@ -24,6 +24,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yashikota.omaigenzo.data.LocalPhotoRepository
+import com.yashikota.omaigenzo.data.PerfLogger
 import com.yashikota.omaigenzo.ui.CompletionScreen
 import com.yashikota.omaigenzo.ui.FolderSelectScreen
 import com.yashikota.omaigenzo.ui.GalleryScreen
@@ -45,6 +46,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        PerfLogger.initialize(applicationContext)
         libRawBridge = LibRawBridge()
 
         setContent {
@@ -114,6 +116,7 @@ fun OmaiGenzoApp(
                 FolderSelectScreen(
                     onSelectFolderClick = { folderPickerLauncher.launch(null) },
                     isImporting = uiState.isImporting,
+                    logPath = PerfLogger.path(),
                 )
             }
             ScreenState.SWIPE_SELECTION -> {

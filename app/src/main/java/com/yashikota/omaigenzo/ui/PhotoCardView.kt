@@ -1,6 +1,7 @@
 package com.yashikota.omaigenzo.ui
 
 import android.graphics.Bitmap
+import android.os.SystemClock
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yashikota.omaigenzo.LibRawBridge
 import com.yashikota.omaigenzo.PhotoItem
+import com.yashikota.omaigenzo.data.PerfLogger
 import com.yashikota.omaigenzo.ui.theme.*
 
 @Composable
@@ -43,6 +45,12 @@ fun PhotoCardView(
     var isLoading by remember(photoItem.id) { mutableStateOf(true) }
 
     LaunchedEffect(photoItem.id) {
+        val startedAt = SystemClock.elapsedRealtimeNanos()
+        PerfLogger.event(
+            "photo_visible_request",
+            "\"id\":\"${PerfLogger.escape(photoItem.id)}\",\"source\":\"${PerfLogger.escape(photoItem.fastDisplayPath)}\"," +
+                "\"target\":$targetMaxDimension",
+        )
         isLoading = true
         val loadedBitmap = libRawBridge.loadPhotoBitmap(
             context = context,
@@ -54,6 +62,12 @@ fun PhotoCardView(
         )
         bitmap = loadedBitmap
         isLoading = false
+        PerfLogger.event(
+            "photo_visible_result",
+            "\"id\":\"${PerfLogger.escape(photoItem.id)}\",\"success\":${loadedBitmap != null}," +
+                "\"width\":${loadedBitmap?.width ?: 0},\"height\":${loadedBitmap?.height ?: 0}," +
+                "\"bytes\":${loadedBitmap?.byteCount ?: 0},\"duration_ns\":${SystemClock.elapsedRealtimeNanos() - startedAt}",
+        )
     }
 
     Box(

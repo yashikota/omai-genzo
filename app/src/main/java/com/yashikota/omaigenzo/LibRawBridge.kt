@@ -9,6 +9,7 @@ import android.os.Build
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import com.yashikota.omaigenzo.data.ByteBudgetLruCache
+import com.yashikota.omaigenzo.data.PerfLogger
 import com.yashikota.omaigenzo.data.PreviewMetrics
 import com.yashikota.omaigenzo.data.PreviewSizing
 import com.yashikota.omaigenzo.data.SuspendSingleFlight
@@ -91,14 +92,30 @@ class LibRawBridge {
         cacheVersion: Long = 0L,
     ): Bitmap? {
         val cacheKey = "$filePath|$cacheVersion|$isRaw|$fastMode|$targetMaxDimension"
+        PerfLogger.event(
+            "preview_request",
+            "\"source\":\"${PerfLogger.escape(filePath)}\",\"raw\":$isRaw,\"fast\":$fastMode," +
+                "\"target\":$targetMaxDimension,\"version\":$cacheVersion",
+        )
         bitmapCache[cacheKey]?.let {
             PreviewMetrics.recordCacheHit()
+            PerfLogger.event(
+                "preview_cache_hit",
+                "\"source\":\"${PerfLogger.escape(filePath)}\",\"target\":$targetMaxDimension,\"bytes\":${it.byteCount}",
+            )
             return it
         }
         return singleFlight.run(cacheKey, cached = { bitmapCache[cacheKey] }) {
             val startedAt = System.nanoTime()
             decodePhoto(context, filePath, isRaw, fastMode, targetMaxDimension).also { decoded ->
-                PreviewMetrics.recordDecode(System.nanoTime() - startedAt)
+                val elapsed = System.nanoTime() - startedAt
+                PreviewMetrics.recordDecode(elapsed)
+                PerfLogger.event(
+                    "preview_decode_end",
+                    "\"source\":\"${PerfLogger.escape(filePath)}\",\"success\":${decoded != null}," +
+                        "\"width\":${decoded?.width ?: 0},\"height\":${decoded?.height ?: 0}," +
+                        "\"bytes\":${decoded?.byteCount ?: 0},\"duration_ns\":$elapsed",
+                )
                 if (decoded != null) bitmapCache.put(cacheKey, decoded)
             }
         }
@@ -124,7 +141,10 @@ class LibRawBridge {
                 } else {
                     null
                 }
-                if (directBitmap != null) return@withContext directBitmap
+                if (directBitmap != null) {
+                    PerfLogger.event("preview_decode_path", "\"path\":\"native_aimage\",\"source\":\"${PerfLogger.escape(filePath)}\"")
+                    return@withContext directBitmap
+                }
 
                 val thumbBytes = if (uri != null) {
                     context.contentResolver.openFileDescriptor(uri, "r")?.use { decodeThumbnailFromFd(it.fd) }
@@ -132,12 +152,17 @@ class LibRawBridge {
                     decodeThumbnail(localPath)
                 }
                 if (thumbBytes != null && thumbBytes.isNotEmpty()) {
+                    PerfLogger.event(
+                        "preview_decode_path",
+                        "\"path\":\"jpeg_bytes\",\"source\":\"${PerfLogger.escape(filePath)}\",\"compressed_bytes\":${thumbBytes.size}",
+                    )
                     val bitmap = decodeJpegBytes(thumbBytes, targetMaxDimension)
                     if (bitmap != null) {
                         return@withContext if (uri != null) bitmap else rotateBitmapIfNeeded(bitmap, localPath)
                     }
                 }
                 if (uri != null) localPath = cacheUriForNativeDecode(context, uri, filePath)
+                PerfLogger.event("preview_decode_path", "\"path\":\"half_raw_fallback\",\"source\":\"${PerfLogger.escape(filePath)}\"")
                 val halfBitmap = decodeFullRaw(localPath, halfSize = true)
                 if (halfBitmap != null) return@withContext halfBitmap
             } else {
@@ -149,6 +174,7 @@ class LibRawBridge {
 
         // Standard image fallback (JPG, PNG, WEBP)
         try {
+            PerfLogger.event("preview_decode_path", "\"path\":\"standard_bitmap\",\"source\":\"${PerfLogger.escape(filePath)}\"")
             val options = bitmapOptions(context, uri, localPath, if (fastMode) targetMaxDimension else Int.MAX_VALUE)
             val bitmap = if (uri != null) {
                 context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }

@@ -28,3 +28,10 @@ Runtime speed is the product. Optimize for the shortest time from a swipe to a v
 - Keep cheap counters for cache hits and decode latency so optimization decisions can use measurements.
 - Verify `testDebugUnitTest`, `lintDebug`, `assembleDebug`, and formatting before a PR.
 - Benchmark on real ARM64 hardware before claiming end-to-end latency improvements. JVM micro-tests only protect hot-path algorithms.
+
+## Performance logging
+
+- Keep `OmaiPerf` JSONL and Logcat events intact when changing a measured hot path.
+- Log full source URI, selected decode path, cache outcome, dimensions, bytes, and elapsed nanoseconds.
+- Persist logs off the UI thread and keep file rotation bounded.
+- The user has explicitly authorized personally identifying filenames, URIs, device information, and full exception stacks in local diagnostic logs. Do not upload them externally.
