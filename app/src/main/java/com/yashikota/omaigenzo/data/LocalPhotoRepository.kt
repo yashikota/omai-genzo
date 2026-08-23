@@ -37,6 +37,7 @@ class LocalPhotoRepository(
         lastChangeState.value = System.currentTimeMillis()
         Result.success(Unit)
     } catch (e: Exception) {
+        PerfLogger.event("import_error", "\"error\":\"${PerfLogger.escape(e.stackTraceToString())}\"")
         Result.failure(e)
     }
 
@@ -76,6 +77,7 @@ class LocalPhotoRepository(
             Result.success(count)
         }
     } catch (e: Exception) {
+        PerfLogger.event("export_error", "\"error\":\"${PerfLogger.escape(e.stackTraceToString())}\"")
         Result.failure(e)
     }
 

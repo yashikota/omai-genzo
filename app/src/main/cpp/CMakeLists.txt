@@ -38,6 +38,7 @@ find_library(jnigraphics-lib jnigraphics)
 find_library(gles3-lib GLESv3)
 find_library(egl-lib EGL)
 find_library(android-lib android)
+find_library(dl-lib dl)
 
 target_link_libraries(
     native-lib
@@ -46,6 +47,7 @@ target_link_libraries(
     ${gles3-lib}
     ${egl-lib}
     ${android-lib}
+    ${dl-lib}
 )
 
 # Enforce 16 KB page size alignment for Android 15+ (API 35+) compatibility

@@ -5,6 +5,7 @@ import com.yashikota.omaigenzo.data.ZeroCopyFolderScanner
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ZeroCopyScannerTest {
@@ -68,5 +69,40 @@ class ZeroCopyScannerTest {
         assertEquals(PhotoType.RAW_AND_JPEG, result[0].fileType)
         assertEquals("nef", result[0].rawExtension)
         assertEquals("jpg", result[0].jpgExtension)
+    }
+
+    @Test
+    fun testStableIdUsesProviderUriWithoutRandomUuidCost() {
+        val entry = ScannedFileEntry(
+            fullName = "FAST.ARW",
+            uriString = "content://provider/raw/42",
+            size = 24_000_000L,
+        )
+
+        val first = scanner.groupAndCreatePhotoItems(listOf(entry)).single()
+        val second = scanner.groupAndCreatePhotoItems(listOf(entry)).single()
+
+        assertEquals("content://provider/raw/42", first.id)
+        assertEquals(first.id, second.id)
+    }
+
+    @Test
+    fun testLargeFolderGroupingHotPath() {
+        val entries = List(20_000) { index ->
+            val number = index / 2
+            val extension = if (index % 2 == 0) "ARW" else "JPG"
+            ScannedFileEntry(
+                fullName = "DSC_${number.toString().padStart(5, '0')}.$extension",
+                uriString = "content://provider/$index",
+                size = 1_000L,
+            )
+        }
+        val startedAt = System.nanoTime()
+
+        val result = scanner.groupAndCreatePhotoItems(entries)
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+
+        assertEquals(10_000, result.size)
+        assertTrue("20k-file grouping took ${elapsedMs}ms", elapsedMs < 2_000)
     }
 }

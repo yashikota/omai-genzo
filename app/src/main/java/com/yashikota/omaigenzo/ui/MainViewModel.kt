@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yashikota.omaigenzo.PhotoItem
 import com.yashikota.omaigenzo.SelectionState
+import com.yashikota.omaigenzo.data.PerfLogger
 import com.yashikota.omaigenzo.data.PhotoRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,6 +48,7 @@ class MainViewModel(
     }
 
     fun onAction(action: MainUiAction) {
+        PerfLogger.event("ui_action", "\"action\":\"${PerfLogger.escape(action.toString())}\"")
         when (action) {
             is MainUiAction.SelectFolder -> importFolder(action.folderUri)
             is MainUiAction.SwipeAccept -> handleSwipe(action.photo, SelectionState.ACCEPT)

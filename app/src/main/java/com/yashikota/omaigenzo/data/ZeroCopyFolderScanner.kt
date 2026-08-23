@@ -2,13 +2,13 @@ package com.yashikota.omaigenzo.data
 
 import android.content.Context
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
+import android.os.SystemClock
+import android.provider.DocumentsContract
 import com.yashikota.omaigenzo.PhotoItem
 import com.yashikota.omaigenzo.PhotoType
 import com.yashikota.omaigenzo.SelectionState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.UUID
 
 data class ScannedFileEntry(
     val fullName: String,
@@ -26,23 +26,44 @@ class ZeroCopyFolderScanner(private val context: Context? = null) {
     }
 
     suspend fun scanTreeUri(treeUri: Uri): List<PhotoItem> = withContext(Dispatchers.IO) {
+        val startedAt = SystemClock.elapsedRealtimeNanos()
+        PerfLogger.event("scan_start", "\"uri\":\"${PerfLogger.escape(treeUri.toString())}\"")
         val ctx = context ?: return@withContext emptyList()
-        val rootDoc = DocumentFile.fromTreeUri(ctx, treeUri) ?: return@withContext emptyList()
-
         val entries = mutableListOf<ScannedFileEntry>()
-        rootDoc.listFiles().forEach { doc ->
-            if (!doc.isDirectory && doc.name != null) {
-                entries.add(
-                    ScannedFileEntry(
-                        fullName = doc.name!!,
-                        uriString = doc.uri.toString(),
-                        size = doc.length(),
-                        modifiedAt = doc.lastModified(),
-                    ),
+        val resolver = ctx.contentResolver
+        val parentId = DocumentsContract.getTreeDocumentId(treeUri)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+        )
+        resolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            val sizeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE)
+            val modifiedColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+            while (cursor.moveToNext()) {
+                if (cursor.getString(mimeColumn) == DocumentsContract.Document.MIME_TYPE_DIR) continue
+                val name = cursor.getString(nameColumn) ?: continue
+                entries += ScannedFileEntry(
+                    fullName = name,
+                    uriString = DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(idColumn)).toString(),
+                    size = if (cursor.isNull(sizeColumn)) 0L else cursor.getLong(sizeColumn),
+                    modifiedAt = if (cursor.isNull(modifiedColumn)) 0L else cursor.getLong(modifiedColumn),
                 )
             }
         }
-        groupAndCreatePhotoItems(entries)
+        groupAndCreatePhotoItems(entries).also { photos ->
+            PerfLogger.event(
+                "scan_end",
+                "\"uri\":\"${PerfLogger.escape(treeUri.toString())}\",\"files\":${entries.size}," +
+                    "\"photos\":${photos.size},\"duration_ns\":${SystemClock.elapsedRealtimeNanos() - startedAt}",
+            )
+        }
     }
 
     fun groupAndCreatePhotoItems(entries: List<ScannedFileEntry>): List<PhotoItem> {
@@ -88,7 +109,7 @@ class ZeroCopyFolderScanner(private val context: Context? = null) {
 
             photoItems.add(
                 PhotoItem(
-                    id = UUID.randomUUID().toString(),
+                    id = rawEntry?.uriString ?: rawEntry?.localPath ?: jpgEntry?.uriString ?: jpgEntry?.localPath ?: baseName,
                     baseName = baseName,
                     rawPath = rawEntry?.localPath,
                     jpgPath = jpgEntry?.localPath,

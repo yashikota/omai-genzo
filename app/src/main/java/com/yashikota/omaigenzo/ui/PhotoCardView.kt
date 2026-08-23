@@ -1,6 +1,7 @@
 package com.yashikota.omaigenzo.ui
 
 import android.graphics.Bitmap
+import android.os.SystemClock
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yashikota.omaigenzo.LibRawBridge
 import com.yashikota.omaigenzo.PhotoItem
+import com.yashikota.omaigenzo.data.PerfLogger
 import com.yashikota.omaigenzo.ui.theme.*
 
 @Composable
@@ -36,21 +38,36 @@ fun PhotoCardView(
     panX: Float = 0f,
     panY: Float = 0f,
     showExifOverlay: Boolean = true,
+    targetMaxDimension: Int = 2048,
 ) {
     val context = LocalContext.current
     var bitmap by remember(photoItem.id) { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember(photoItem.id) { mutableStateOf(true) }
 
     LaunchedEffect(photoItem.id) {
+        val startedAt = SystemClock.elapsedRealtimeNanos()
+        PerfLogger.event(
+            "photo_visible_request",
+            "\"id\":\"${PerfLogger.escape(photoItem.id)}\",\"source\":\"${PerfLogger.escape(photoItem.fastDisplayPath)}\"," +
+                "\"target\":$targetMaxDimension",
+        )
         isLoading = true
         val loadedBitmap = libRawBridge.loadPhotoBitmap(
             context = context,
             filePath = photoItem.fastDisplayPath,
             isRaw = photoItem.shouldUseRawRenderer(),
             fastMode = true,
+            targetMaxDimension = targetMaxDimension,
+            cacheVersion = photoItem.modifiedAt,
         )
         bitmap = loadedBitmap
         isLoading = false
+        PerfLogger.event(
+            "photo_visible_result",
+            "\"id\":\"${PerfLogger.escape(photoItem.id)}\",\"success\":${loadedBitmap != null}," +
+                "\"width\":${loadedBitmap?.width ?: 0},\"height\":${loadedBitmap?.height ?: 0}," +
+                "\"bytes\":${loadedBitmap?.byteCount ?: 0},\"duration_ns\":${SystemClock.elapsedRealtimeNanos() - startedAt}",
+        )
     }
 
     Box(
