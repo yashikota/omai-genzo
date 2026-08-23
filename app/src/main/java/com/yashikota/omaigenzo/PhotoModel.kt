@@ -29,6 +29,7 @@ data class PhotoItem(
     val rawExtension: String = "",
     val jpgExtension: String = "",
     val fileSize: Long = 0L,
+    val modifiedAt: Long = 0L,
     val fileType: PhotoType = PhotoType.STANDARD,
     var selectionState: SelectionState = SelectionState.PENDING,
     var exifInfo: ExifInfo = ExifInfo(),
@@ -46,6 +47,10 @@ data class PhotoItem(
         get() = jpgPath ?: rawPath ?: jpgUriString ?: rawUriString ?: ""
 
     fun isRawFile(): Boolean = rawPath != null || rawUriString != null
+
+    fun hasJpegPreview(): Boolean = jpgPath != null || jpgUriString != null
+
+    fun shouldUseRawRenderer(): Boolean = isRawFile() && !hasJpegPreview()
 }
 
 data class SessionSummary(

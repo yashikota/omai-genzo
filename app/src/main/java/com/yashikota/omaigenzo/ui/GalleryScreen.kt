@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,6 +43,7 @@ fun GalleryScreen(
     onExportClick: () -> Unit = {},
     onExportAcceptPhotos: () -> Unit = onExportClick,
 ) {
+    val context = LocalContext.current
     var selectedFilter by remember { mutableStateOf(FilterCategory.ALL) }
     var selectedPhotoForDetail by remember { mutableStateOf<PhotoItem?>(null) }
 
@@ -194,7 +196,7 @@ fun GalleryScreen(
                                 shape = RoundedCornerShape(8.dp),
                             ) {
                                 Text(
-                                    text = "ACCEPT",
+                                    text = "キープ",
                                     color = if (photo.selectionState == SelectionState.ACCEPT) DarkBackground else AcceptGreen,
                                     fontWeight = FontWeight.Bold,
                                 )
@@ -211,7 +213,7 @@ fun GalleryScreen(
                                 shape = RoundedCornerShape(8.dp),
                             ) {
                                 Text(
-                                    text = "REJECT",
+                                    text = "破棄",
                                     color = if (photo.selectionState == SelectionState.REJECT) TextPrimary else RejectRed,
                                     fontWeight = FontWeight.Bold,
                                 )
@@ -232,12 +234,14 @@ private fun GalleryItemCard(
     libRawBridge: LibRawBridge,
     onClick: () -> Unit,
 ) {
+    val context = LocalContext.current
     var thumbnail by remember(photoItem.id) { mutableStateOf<Bitmap?>(null) }
 
     LaunchedEffect(photoItem.id) {
         thumbnail = libRawBridge.loadPhotoBitmap(
+            context = context,
             filePath = photoItem.fastDisplayPath,
-            isRaw = photoItem.rawPath != null && photoItem.jpgPath == null,
+            isRaw = photoItem.shouldUseRawRenderer(),
             fastMode = true,
         )
     }

@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,16 +33,20 @@ fun PhotoCardView(
     libRawBridge: LibRawBridge,
     modifier: Modifier = Modifier,
     scale: Float = 1f,
+    panX: Float = 0f,
+    panY: Float = 0f,
     showExifOverlay: Boolean = true,
 ) {
+    val context = LocalContext.current
     var bitmap by remember(photoItem.id) { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember(photoItem.id) { mutableStateOf(true) }
 
     LaunchedEffect(photoItem.id) {
         isLoading = true
         val loadedBitmap = libRawBridge.loadPhotoBitmap(
+            context = context,
             filePath = photoItem.fastDisplayPath,
-            isRaw = photoItem.rawPath != null && photoItem.jpgPath == null,
+            isRaw = photoItem.shouldUseRawRenderer(),
             fastMode = true,
         )
         bitmap = loadedBitmap
@@ -80,6 +85,8 @@ fun PhotoCardView(
                     .graphicsLayer {
                         scaleX = scale
                         scaleY = scale
+                        translationX = panX
+                        translationY = panY
                     },
             )
         } else {

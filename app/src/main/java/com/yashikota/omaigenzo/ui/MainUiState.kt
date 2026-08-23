@@ -42,6 +42,7 @@ sealed interface MainUiAction {
     data class SwipeReject(val photo: PhotoItem) : MainUiAction
     data class SwipeSkip(val photo: PhotoItem) : MainUiAction
     data object SwipeUndo : MainUiAction
+    data object ResumePending : MainUiAction
     data class NavigateTo(val screen: ScreenState) : MainUiAction
     data class ExportAcceptedPhotos(val outputUri: Uri) : MainUiAction
     data class ChangePhotoSelection(val photoId: String, val newState: SelectionState) : MainUiAction

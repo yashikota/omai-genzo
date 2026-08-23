@@ -16,6 +16,14 @@ class MainViewModel(
     private val repository: PhotoRepository,
 ) : ViewModel() {
 
+    private data class SwipeHistory(
+        val index: Int,
+        val photoId: String,
+        val previousState: SelectionState?,
+    )
+
+    private val swipeHistory = ArrayDeque<SwipeHistory>()
+
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
@@ -24,7 +32,15 @@ class MainViewModel(
             repository.photos.collect { photoList ->
                 _uiState.update { state ->
                     val newIndex = state.currentIndex.coerceAtMost((photoList.size - 1).coerceAtLeast(0))
-                    state.copy(photos = photoList, currentIndex = newIndex)
+                    state.copy(
+                        photos = photoList,
+                        currentIndex = newIndex,
+                        currentScreen = if (state.currentScreen == ScreenState.FOLDER_SELECT && photoList.isNotEmpty()) {
+                            ScreenState.SWIPE_SELECTION
+                        } else {
+                            state.currentScreen
+                        },
+                    )
                 }
             }
         }
@@ -37,6 +53,7 @@ class MainViewModel(
             is MainUiAction.SwipeReject -> handleSwipe(action.photo, SelectionState.REJECT)
             is MainUiAction.SwipeSkip -> handleSkip()
             is MainUiAction.SwipeUndo -> handleUndo()
+            is MainUiAction.ResumePending -> resumePending()
             is MainUiAction.NavigateTo -> navigateTo(action.screen)
             is MainUiAction.ExportAcceptedPhotos -> exportAcceptedPhotos(action.outputUri)
             is MainUiAction.ChangePhotoSelection -> updateSelection(action.photoId, action.newState)
@@ -51,12 +68,17 @@ class MainViewModel(
             _uiState.update { it.copy(isImporting = true, errorMessage = null) }
             val result = repository.importSession(folderUri)
             result.onSuccess {
-                _uiState.update {
-                    it.copy(
-                        isImporting = false,
-                        currentIndex = 0,
-                        currentScreen = ScreenState.SWIPE_SELECTION,
-                    )
+                swipeHistory.clear()
+                _uiState.update { state ->
+                    if (state.photos.isEmpty()) {
+                        state.copy(
+                            isImporting = false,
+                            currentScreen = ScreenState.FOLDER_SELECT,
+                            errorMessage = "対応する写真が見つかりませんでした",
+                        )
+                    } else {
+                        state.copy(isImporting = false, currentIndex = 0, currentScreen = ScreenState.SWIPE_SELECTION)
+                    }
                 }
             }.onFailure { error ->
                 _uiState.update {
@@ -70,11 +92,14 @@ class MainViewModel(
     }
 
     private fun handleSwipe(photo: PhotoItem, state: SelectionState) {
+        swipeHistory.addLast(SwipeHistory(_uiState.value.currentIndex, photo.id, photo.selectionState))
         repository.updateSelection(photo.id, state)
         advanceToNextPhoto()
     }
 
     private fun handleSkip() {
+        val state = _uiState.value
+        state.currentPhoto?.let { swipeHistory.addLast(SwipeHistory(state.currentIndex, it.id, null)) }
         advanceToNextPhoto()
     }
 
@@ -90,22 +115,20 @@ class MainViewModel(
     }
 
     private fun handleUndo() {
-        val restored = repository.undoLastSelection()
-        if (restored) {
-            _uiState.update { state ->
-                val prevIndex = (state.currentIndex - 1).coerceAtLeast(0)
-                state.copy(currentIndex = prevIndex)
-            }
-        } else {
-            _uiState.update { state ->
-                val prevIndex = (state.currentIndex - 1).coerceAtLeast(0)
-                state.copy(currentIndex = prevIndex)
-            }
-        }
+        val operation = swipeHistory.removeLastOrNull() ?: return
+        operation.previousState?.let { repository.updateSelection(operation.photoId, it) }
+        _uiState.update { it.copy(currentIndex = operation.index, currentScreen = ScreenState.SWIPE_SELECTION) }
     }
 
     private fun navigateTo(screen: ScreenState) {
         _uiState.update { it.copy(currentScreen = screen) }
+    }
+
+    private fun resumePending() {
+        _uiState.update { state ->
+            val index = state.photos.indexOfFirst { it.selectionState == SelectionState.PENDING }
+            state.copy(currentIndex = index.coerceAtLeast(0), currentScreen = ScreenState.SWIPE_SELECTION)
+        }
     }
 
     private fun updateSelection(photoId: String, newState: SelectionState) {
@@ -136,9 +159,10 @@ class MainViewModel(
 
     private fun resetSession() {
         repository.clearSession()
+        swipeHistory.clear()
         _uiState.update {
             MainUiState(
-                currentScreen = ScreenState.SWIPE_SELECTION,
+                currentScreen = ScreenState.FOLDER_SELECT,
                 photos = repository.photos.value,
                 currentIndex = 0,
             )
