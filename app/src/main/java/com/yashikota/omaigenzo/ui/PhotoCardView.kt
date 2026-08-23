@@ -36,6 +36,7 @@ fun PhotoCardView(
     panX: Float = 0f,
     panY: Float = 0f,
     showExifOverlay: Boolean = true,
+    targetMaxDimension: Int = 2048,
 ) {
     val context = LocalContext.current
     var bitmap by remember(photoItem.id) { mutableStateOf<Bitmap?>(null) }
@@ -48,6 +49,8 @@ fun PhotoCardView(
             filePath = photoItem.fastDisplayPath,
             isRaw = photoItem.shouldUseRawRenderer(),
             fastMode = true,
+            targetMaxDimension = targetMaxDimension,
+            cacheVersion = photoItem.modifiedAt,
         )
         bitmap = loadedBitmap
         isLoading = false

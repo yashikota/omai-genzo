@@ -176,6 +176,7 @@ fun GalleryScreen(
                                 photoItem = photo,
                                 libRawBridge = libRawBridge,
                                 showExifOverlay = true,
+                                targetMaxDimension = 2048,
                             )
                         }
 
@@ -243,6 +244,8 @@ private fun GalleryItemCard(
             filePath = photoItem.fastDisplayPath,
             isRaw = photoItem.shouldUseRawRenderer(),
             fastMode = true,
+            targetMaxDimension = 512,
+            cacheVersion = photoItem.modifiedAt,
         )
     }
 

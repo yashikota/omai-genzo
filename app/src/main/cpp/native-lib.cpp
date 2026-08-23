@@ -3,12 +3,34 @@
 #include <android/log.h>
 #include <android/bitmap.h>
 #include <android/native_window_jni.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include "libraw/libraw.h"
 #include "FastGpuEngine.h"
 
 #define LOG_TAG "NativeLibRaw"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+static jbyteArray extractJpegThumbnail(JNIEnv *env, LibRaw &raw) {
+    if (raw.unpack_thumb() != LIBRAW_SUCCESS) return nullptr;
+    libraw_processed_image_t *img = raw.dcraw_make_mem_thumb();
+    if (!img) return nullptr;
+
+    jbyteArray result = nullptr;
+    if (img->type == LIBRAW_IMAGE_JPEG && img->data_size > 0) {
+        result = env->NewByteArray(static_cast<jsize>(img->data_size));
+        if (result) {
+            env->SetByteArrayRegion(
+                    result,
+                    0,
+                    static_cast<jsize>(img->data_size),
+                    reinterpret_cast<jbyte *>(img->data));
+        }
+    }
+    LibRaw::dcraw_clear_mem(img);
+    return result;
+}
 
 extern "C" {
 
@@ -62,30 +84,30 @@ Java_com_yashikota_omaigenzo_LibRawBridge_decodeThumbnail(JNIEnv *env, jobject t
         return nullptr;
     }
 
-    if (raw.unpack_thumb() != LIBRAW_SUCCESS) {
-        raw.recycle();
-        env->ReleaseStringUTFChars(file_path, path);
-        return nullptr;
-    }
-
-    libraw_processed_image_t *img = raw.dcraw_make_mem_thumb();
-    if (!img) {
-        raw.recycle();
-        env->ReleaseStringUTFChars(file_path, path);
-        return nullptr;
-    }
-
-    jbyteArray byteArray = nullptr;
-    if (img->type == LIBRAW_IMAGE_JPEG) {
-        byteArray = env->NewByteArray(img->data_size);
-        env->SetByteArrayRegion(byteArray, 0, img->data_size, reinterpret_cast<jbyte*>(img->data));
-    }
-
-    LibRaw::dcraw_clear_mem(img);
+    jbyteArray byteArray = extractJpegThumbnail(env, raw);
     raw.recycle();
     env->ReleaseStringUTFChars(file_path, path);
 
     return byteArray;
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_yashikota_omaigenzo_LibRawBridge_decodeThumbnailFromFd(JNIEnv *env, jobject thiz, jint fd) {
+    if (fd < 0) return nullptr;
+    struct stat statBuf{};
+    if (fstat(fd, &statBuf) != 0 || statBuf.st_size <= 0) return nullptr;
+
+    void *mapped = mmap(nullptr, statBuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    if (mapped == MAP_FAILED) return nullptr;
+
+    LibRaw raw;
+    jbyteArray result = nullptr;
+    if (raw.open_buffer(mapped, static_cast<size_t>(statBuf.st_size)) == LIBRAW_SUCCESS) {
+        result = extractJpegThumbnail(env, raw);
+    }
+    raw.recycle();
+    munmap(mapped, static_cast<size_t>(statBuf.st_size));
+    return result;
 }
 
 JNIEXPORT jobject JNICALL

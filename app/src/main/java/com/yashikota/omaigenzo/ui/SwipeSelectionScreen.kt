@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -32,6 +33,9 @@ import com.yashikota.omaigenzo.LibRawBridge
 import com.yashikota.omaigenzo.PhotoItem
 import com.yashikota.omaigenzo.SelectionState
 import com.yashikota.omaigenzo.ui.theme.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.text.DateFormat
 import java.util.Date
 import kotlin.math.roundToInt
@@ -56,6 +60,7 @@ fun SwipeSelectionScreen(
     var reversedDirections by rememberSaveable { mutableStateOf(false) }
 
     val density = LocalDensity.current
+    val context = LocalContext.current
     val thresholdX = with(density) { 120.dp.toPx() }
     val thresholdY = with(density) { 110.dp.toPx() }
 
@@ -77,6 +82,26 @@ fun SwipeSelectionScreen(
         offsetY = 0f
         zoomScale = 1f
         imagePan = Offset.Zero
+    }
+
+    LaunchedEffect(currentIndex, photos) {
+        val order = intArrayOf(currentIndex + 1, currentIndex - 1, currentIndex + 2)
+        coroutineScope {
+            order.map { index ->
+                photos.getOrNull(index)?.let { photo ->
+                    async {
+                        libRawBridge.loadPhotoBitmap(
+                            context = context,
+                            filePath = photo.fastDisplayPath,
+                            isRaw = photo.shouldUseRawRenderer(),
+                            fastMode = true,
+                            targetMaxDimension = 2048,
+                            cacheVersion = photo.modifiedAt,
+                        )
+                    }
+                }
+            }.filterNotNull().awaitAll()
+        }
     }
 
     Scaffold(
@@ -245,23 +270,13 @@ fun SwipeSelectionScreen(
                                 }
                             },
                     ) {
-                        if (currentPhoto.shouldUseRawRenderer()) {
-                            FastRawGpuViewer(
-                                photo = currentPhoto,
-                                zoomScale = zoomScale,
-                                panX = imagePan.x / 1000f,
-                                panY = imagePan.y / 1000f,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } else {
-                            PhotoCardView(
-                                photoItem = currentPhoto,
-                                libRawBridge = libRawBridge,
-                                scale = zoomScale,
-                                panX = imagePan.x,
-                                panY = imagePan.y,
-                            )
-                        }
+                        PhotoCardView(
+                            photoItem = currentPhoto,
+                            libRawBridge = libRawBridge,
+                            scale = zoomScale,
+                            panX = imagePan.x,
+                            panY = imagePan.y,
+                        )
 
                         // Overlay Indicators
                         if (offsetX > 40f && zoomScale <= 1.05f) {
