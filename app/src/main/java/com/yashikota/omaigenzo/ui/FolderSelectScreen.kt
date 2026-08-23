@@ -96,14 +96,14 @@ fun FolderSelectScreen(
                 ) {
                     FeatureRow(
                         icon = Icons.Default.Swipe,
-                        title = "マチアプ風高速スワイプ選別",
-                        subtitle = "👉 KEEP | 👈 REJECT | ☝️ 前の画像へ戻る | 👇 スキップ",
+                        title = "高速スワイプ選別",
+                        subtitle = "👉 キープ | 👈 破棄 | ☝️ 前の操作へ戻る | 👇 保留",
                     )
                     HorizontalDivider(color = BorderColor)
                     FeatureRow(
                         icon = Icons.Default.PhotoLibrary,
-                        title = "フォルダまるごと安全ローカルコピー",
-                        subtitle = "原本フォルダからアプリ内へコピーして超高速選別",
+                        title = "原本を変更しない安全な選別",
+                        subtitle = "選んだフォルダを直接読み込み、原本には変更を加えません",
                     )
                 }
 

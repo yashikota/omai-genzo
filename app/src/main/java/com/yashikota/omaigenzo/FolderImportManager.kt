@@ -3,6 +3,7 @@ package com.yashikota.omaigenzo
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -198,42 +199,62 @@ class FolderImportManager(val context: Context) {
         var exportedCount = 0
 
         acceptItems.forEach { item ->
-            item.rawPath?.let { rawPath ->
-                val sourceFile = File(rawPath)
-                if (sourceFile.exists()) {
-                    try {
-                        val fileName = "${item.baseName}.${item.rawExtension}"
-                        val newDoc = targetDoc.createFile("image/x-adobe-dng", fileName)
-                        if (newDoc != null) {
-                            context.contentResolver.openOutputStream(newDoc.uri)?.use { output ->
-                                sourceFile.inputStream().use { input -> input.copyTo(output) }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to export RAW file $rawPath: ${e.message}")
-                    }
-                }
-            }
-
-            item.jpgPath?.let { jpgPath ->
-                val sourceFile = File(jpgPath)
-                if (sourceFile.exists()) {
-                    try {
-                        val fileName = "${item.baseName}.${item.jpgExtension}"
-                        val newDoc = targetDoc.createFile("image/jpeg", fileName)
-                        if (newDoc != null) {
-                            context.contentResolver.openOutputStream(newDoc.uri)?.use { output ->
-                                sourceFile.inputStream().use { input -> input.copyTo(output) }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to export JPG file $jpgPath: ${e.message}")
-                    }
-                }
-            }
-
-            exportedCount++
+            val rawExported = copyPhotoSource(
+                targetDoc = targetDoc,
+                path = item.rawPath,
+                uriString = item.rawUriString,
+                fileName = "${item.baseName}.${item.rawExtension}",
+                mimeType = rawMimeType(item.rawExtension),
+            )
+            val jpegExported = copyPhotoSource(
+                targetDoc = targetDoc,
+                path = item.jpgPath,
+                uriString = item.jpgUriString,
+                fileName = "${item.baseName}.${item.jpgExtension}",
+                mimeType = standardMimeType(item.jpgExtension),
+            )
+            if (rawExported || jpegExported) exportedCount++
         }
         return@withContext exportedCount
+    }
+
+    private fun copyPhotoSource(
+        targetDoc: DocumentFile,
+        path: String?,
+        uriString: String?,
+        fileName: String,
+        mimeType: String,
+    ): Boolean {
+        if (path == null && uriString == null) return false
+        return try {
+            val newDoc = targetDoc.createFile(mimeType, fileName) ?: return false
+            val output = context.contentResolver.openOutputStream(newDoc.uri) ?: return false
+            output.use { destination ->
+                when {
+                    path != null -> File(path).takeIf(File::exists)?.inputStream()?.use { it.copyTo(destination) }
+                        ?: return false
+                    uriString != null -> context.contentResolver.openInputStream(uriString.toUri())?.use { it.copyTo(destination) }
+                        ?: return false
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to export $fileName: ${e.message}")
+            false
+        }
+    }
+
+    private fun rawMimeType(extension: String): String = when (extension.lowercase()) {
+        "dng" -> "image/x-adobe-dng"
+        "cr2", "cr3" -> "image/x-canon-cr2"
+        "nef" -> "image/x-nikon-nef"
+        "arw" -> "image/x-sony-arw"
+        else -> "application/octet-stream"
+    }
+
+    private fun standardMimeType(extension: String): String = when (extension.lowercase()) {
+        "png" -> "image/png"
+        "webp" -> "image/webp"
+        else -> "image/jpeg"
     }
 }

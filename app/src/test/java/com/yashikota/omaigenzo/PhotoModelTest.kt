@@ -23,6 +23,39 @@ class PhotoModelTest {
         assertEquals("ARW", item.displayBadge)
         assertTrue(item.isRawFile())
         assertEquals("/path/to/DSC06800.JPG", item.fastDisplayPath)
+        assertTrue(item.hasJpegPreview())
+        assertEquals(false, item.shouldUseRawRenderer())
+    }
+
+    @Test
+    fun testRawUriWithoutJpegUsesRawRenderer() {
+        val item = PhotoItem(
+            id = "raw-uri",
+            baseName = "DSC0001",
+            rawUriString = "content://photos/1",
+            rawExtension = "arw",
+            fileType = PhotoType.RAW,
+        )
+
+        assertTrue(item.isRawFile())
+        assertTrue(item.shouldUseRawRenderer())
+        assertEquals("content://photos/1", item.fastDisplayPath)
+    }
+
+    @Test
+    fun testJpegUriCompanionWinsForFastDisplay() {
+        val item = PhotoItem(
+            id = "pair-uri",
+            baseName = "DSC0002",
+            rawUriString = "content://photos/raw",
+            jpgUriString = "content://photos/jpeg",
+            rawExtension = "nef",
+            jpgExtension = "jpg",
+            fileType = PhotoType.RAW_AND_JPEG,
+        )
+
+        assertEquals("content://photos/jpeg", item.fastDisplayPath)
+        assertEquals(false, item.shouldUseRawRenderer())
     }
 
     @Test

@@ -1,10 +1,12 @@
 package com.yashikota.omaigenzo
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.media.ExifInterface
+import android.net.Uri
 import android.util.Log
+import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -71,27 +73,33 @@ class LibRawBridge {
     }
 
     suspend fun loadPhotoBitmap(
+        context: Context,
         filePath: String,
         isRaw: Boolean,
         fastMode: Boolean = true,
     ): Bitmap? = withContext(Dispatchers.IO) {
-        val file = File(filePath)
-        if (!file.exists()) return@withContext null
+        val uri = filePath.takeIf { it.startsWith("content://") }?.let(Uri::parse)
+        val localPath = if (uri != null && isRaw) {
+            cacheUriForNativeDecode(context, uri, filePath)
+        } else {
+            filePath
+        }
+        if (uri == null && !File(localPath).exists()) return@withContext null
 
         if (isRaw) {
             // First try thumbnail fast extraction for super responsive UI
             if (fastMode) {
-                val thumbBytes = decodeThumbnail(filePath)
+                val thumbBytes = decodeThumbnail(localPath)
                 if (thumbBytes != null && thumbBytes.isNotEmpty()) {
                     val bitmap = BitmapFactory.decodeByteArray(thumbBytes, 0, thumbBytes.size)
-                    if (bitmap != null) return@withContext rotateBitmapIfNeeded(bitmap, filePath)
+                    if (bitmap != null) return@withContext rotateBitmapIfNeeded(bitmap, localPath)
                 }
                 // Fallback to half-size demosaic if thumbnail extraction fails or unavailable
-                val halfBitmap = decodeFullRaw(filePath, halfSize = true)
+                val halfBitmap = decodeFullRaw(localPath, halfSize = true)
                 if (halfBitmap != null) return@withContext halfBitmap
             } else {
                 // High precision decode
-                val fullBitmap = decodeFullRaw(filePath, halfSize = false)
+                val fullBitmap = decodeFullRaw(localPath, halfSize = false)
                 if (fullBitmap != null) return@withContext fullBitmap
             }
         }
@@ -104,12 +112,35 @@ class LibRawBridge {
                     inSampleSize = 2
                 }
             }
-            val bitmap = BitmapFactory.decodeFile(filePath, options) ?: return@withContext null
-            return@withContext rotateBitmapIfNeeded(bitmap, filePath)
+            val bitmap = if (uri != null) {
+                context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+            } else {
+                BitmapFactory.decodeFile(localPath, options)
+            } ?: return@withContext null
+            return@withContext if (uri != null) rotateBitmapIfNeeded(context, bitmap, uri) else rotateBitmapIfNeeded(bitmap, localPath)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to decode standard image: ${e.message}")
             null
         }
+    }
+
+    private fun cacheUriForNativeDecode(context: Context, uri: Uri, key: String): String {
+        val extension = key.substringAfterLast('.', "raw").take(8)
+        val target = File(context.cacheDir, "raw_preview_${key.hashCode()}.$extension")
+        if (!target.exists() || target.length() == 0L) {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                target.outputStream().use(input::copyTo)
+            } ?: return ""
+        }
+        return target.absolutePath
+    }
+
+    private fun rotateBitmapIfNeeded(context: Context, bitmap: Bitmap, uri: Uri): Bitmap = try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            rotateBitmap(bitmap, ExifInterface(input).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL))
+        } ?: bitmap
+    } catch (_: Exception) {
+        bitmap
     }
 
     private fun rotateBitmapIfNeeded(bitmap: Bitmap, path: String): Bitmap = try {
@@ -118,19 +149,23 @@ class LibRawBridge {
             ExifInterface.TAG_ORIENTATION,
             ExifInterface.ORIENTATION_NORMAL,
         )
+        rotateBitmap(bitmap, orientation)
+    } catch (e: Exception) {
+        bitmap
+    }
+
+    private fun rotateBitmap(bitmap: Bitmap, orientation: Int): Bitmap {
         val degrees = when (orientation) {
             ExifInterface.ORIENTATION_ROTATE_90 -> 90f
             ExifInterface.ORIENTATION_ROTATE_180 -> 180f
             ExifInterface.ORIENTATION_ROTATE_270 -> 270f
             else -> 0f
         }
-        if (degrees != 0f) {
+        return if (degrees != 0f) {
             val matrix = Matrix().apply { postRotate(degrees) }
             Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
         } else {
             bitmap
         }
-    } catch (e: Exception) {
-        bitmap
     }
 }

@@ -98,6 +98,53 @@ class MainViewModelTest {
 
         viewModel.onAction(MainUiAction.SwipeUndo)
         assertEquals(0, viewModel.uiState.value.currentIndex)
+        assertEquals(SelectionState.PENDING, fakeRepository.photos.value[0].selectionState)
+    }
+
+    @Test
+    fun testUndoAfterSkipDoesNotChangeOlderSelection() = runTest {
+        val photos = listOf(
+            PhotoItem("1", "one"),
+            PhotoItem("2", "two"),
+            PhotoItem("3", "three"),
+        )
+        fakeRepository.setPhotos(photos)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onAction(MainUiAction.SwipeAccept(photos[0]))
+        viewModel.onAction(MainUiAction.SwipeSkip(photos[1]))
+        viewModel.onAction(MainUiAction.SwipeUndo)
+
+        assertEquals(1, viewModel.uiState.value.currentIndex)
+        assertEquals(SelectionState.ACCEPT, fakeRepository.photos.value[0].selectionState)
+        assertEquals(SelectionState.PENDING, fakeRepository.photos.value[1].selectionState)
+    }
+
+    @Test
+    fun testUndoWithoutHistoryDoesNothing() = runTest {
+        val photos = listOf(PhotoItem("1", "one"), PhotoItem("2", "two"))
+        fakeRepository.setPhotos(photos)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onAction(MainUiAction.SwipeUndo)
+
+        assertEquals(0, viewModel.uiState.value.currentIndex)
+    }
+
+    @Test
+    fun testResumePendingStartsAtFirstPendingPhoto() = runTest {
+        val photos = listOf(
+            PhotoItem("1", "one", selectionState = SelectionState.ACCEPT),
+            PhotoItem("2", "two", selectionState = SelectionState.PENDING),
+            PhotoItem("3", "three", selectionState = SelectionState.REJECT),
+        )
+        fakeRepository.setPhotos(photos)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onAction(MainUiAction.ResumePending)
+
+        assertEquals(1, viewModel.uiState.value.currentIndex)
+        assertEquals(ScreenState.SWIPE_SELECTION, viewModel.uiState.value.currentScreen)
     }
 
     @Test

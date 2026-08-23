@@ -31,10 +31,12 @@ fun CompletionScreen(
     onOpenGallery: () -> Unit = onGalleryClick,
     onExportClick: () -> Unit = {},
     onExportAcceptPhotos: () -> Unit = onExportClick,
+    onResumePending: () -> Unit = {},
 ) {
     val totalCount = photos.size
     val acceptCount = photos.count { it.selectionState == SelectionState.ACCEPT }
     val rejectCount = photos.count { it.selectionState == SelectionState.REJECT }
+    val pendingCount = photos.count { it.selectionState == SelectionState.PENDING }
     val acceptPercentage = if (totalCount > 0) (acceptCount * 100) / totalCount else 0
 
     Scaffold(
@@ -66,7 +68,7 @@ fun CompletionScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "選別が完了しました！",
+                    text = if (pendingCount == 0) "選別が完了しました！" else "写真を一巡しました",
                     color = TextPrimary,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
@@ -76,7 +78,7 @@ fun CompletionScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "全 $totalCount 枚の選別が終わりました。",
+                    text = if (pendingCount == 0) "全 $totalCount 枚の判定が終わりました。" else "$pendingCount 枚が保留になっています。",
                     color = TextSecondary,
                     fontSize = 14.sp,
                 )
@@ -93,7 +95,7 @@ fun CompletionScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(text = "$acceptCount 枚", color = AcceptGreen, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text(text = "ACCEPT ($acceptPercentage%)", color = TextSecondary, fontSize = 12.sp)
+                        Text(text = "キープ ($acceptPercentage%)", color = TextSecondary, fontSize = 12.sp)
                     }
 
                     Box(
@@ -105,14 +107,14 @@ fun CompletionScreen(
 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(text = "$rejectCount 枚", color = RejectRed, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text(text = "REJECT", color = TextSecondary, fontSize = 12.sp)
+                        Text(text = "破棄", color = TextSecondary, fontSize = 12.sp)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(32.dp))
 
                 Button(
-                    onClick = onRestartSelection,
+                    onClick = if (pendingCount > 0) onResumePending else onRestartSelection,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
@@ -122,7 +124,7 @@ fun CompletionScreen(
                     Icon(imageVector = Icons.Default.Refresh, contentDescription = null, tint = DarkBackground)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "最初から選別し直す",
+                        text = if (pendingCount > 0) "保留した写真を続ける" else "別のフォルダを選ぶ",
                         color = DarkBackground,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
@@ -162,7 +164,7 @@ fun CompletionScreen(
                     Icon(imageVector = Icons.Default.Download, contentDescription = null, tint = AcceptGreen)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "ACCEPT 写真を書き出す ($acceptCount 枚)",
+                        text = "キープ写真を書き出す ($acceptCount 枚)",
                         color = AcceptGreen,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,

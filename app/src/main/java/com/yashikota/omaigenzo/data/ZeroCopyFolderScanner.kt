@@ -15,6 +15,7 @@ data class ScannedFileEntry(
     val uriString: String? = null,
     val localPath: String? = null,
     val size: Long = 0L,
+    val modifiedAt: Long = 0L,
 )
 
 class ZeroCopyFolderScanner(private val context: Context? = null) {
@@ -36,6 +37,7 @@ class ZeroCopyFolderScanner(private val context: Context? = null) {
                         fullName = doc.name!!,
                         uriString = doc.uri.toString(),
                         size = doc.length(),
+                        modifiedAt = doc.lastModified(),
                     ),
                 )
             }
@@ -95,6 +97,7 @@ class ZeroCopyFolderScanner(private val context: Context? = null) {
                     rawExtension = rawExt,
                     jpgExtension = jpgExt,
                     fileSize = totalSize,
+                    modifiedAt = maxOf(rawEntry?.modifiedAt ?: 0L, jpgEntry?.modifiedAt ?: 0L),
                     fileType = photoType,
                     selectionState = SelectionState.PENDING,
                 ),
