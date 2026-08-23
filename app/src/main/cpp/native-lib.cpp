@@ -3,6 +3,8 @@
 #include <android/log.h>
 #include <android/bitmap.h>
 #include <android/native_window_jni.h>
+#include <android/imagedecoder.h>
+#include <dlfcn.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include "libraw/libraw.h"
@@ -30,6 +32,68 @@ static jbyteArray extractJpegThumbnail(JNIEnv *env, LibRaw &raw) {
     }
     LibRaw::dcraw_clear_mem(img);
     return result;
+}
+
+static jobject decodeJpegDirect(JNIEnv *env, const void *data, size_t size, int targetMax) {
+    using CreateFn = int (*)(const void *, size_t, AImageDecoder **);
+    using DeleteFn = void (*)(AImageDecoder *);
+    using HeaderFn = const AImageDecoderHeaderInfo *(*)(const AImageDecoder *);
+    using DimensionFn = int32_t (*)(const AImageDecoderHeaderInfo *);
+    using SetFormatFn = int (*)(AImageDecoder *, int32_t);
+    using SetSizeFn = int (*)(AImageDecoder *, int32_t, int32_t);
+    using StrideFn = size_t (*)(AImageDecoder *);
+    using DecodeFn = int (*)(AImageDecoder *, void *, size_t, size_t);
+    void *androidLib = dlopen("libandroid.so", RTLD_NOW | RTLD_LOCAL);
+    if (!androidLib) return nullptr;
+    auto create = reinterpret_cast<CreateFn>(dlsym(androidLib, "AImageDecoder_createFromBuffer"));
+    auto destroy = reinterpret_cast<DeleteFn>(dlsym(androidLib, "AImageDecoder_delete"));
+    auto header = reinterpret_cast<HeaderFn>(dlsym(androidLib, "AImageDecoder_getHeaderInfo"));
+    auto getWidth = reinterpret_cast<DimensionFn>(dlsym(androidLib, "AImageDecoderHeaderInfo_getWidth"));
+    auto getHeight = reinterpret_cast<DimensionFn>(dlsym(androidLib, "AImageDecoderHeaderInfo_getHeight"));
+    auto setFormat = reinterpret_cast<SetFormatFn>(dlsym(androidLib, "AImageDecoder_setAndroidBitmapFormat"));
+    auto setSize = reinterpret_cast<SetSizeFn>(dlsym(androidLib, "AImageDecoder_setTargetSize"));
+    auto minStride = reinterpret_cast<StrideFn>(dlsym(androidLib, "AImageDecoder_getMinimumStride"));
+    auto decode = reinterpret_cast<DecodeFn>(dlsym(androidLib, "AImageDecoder_decodeImage"));
+    if (!create || !destroy || !header || !getWidth || !getHeight || !setFormat || !setSize || !minStride || !decode) {
+        dlclose(androidLib);
+        return nullptr;
+    }
+
+    AImageDecoder *decoder = nullptr;
+    if (create(data, size, &decoder) != ANDROID_IMAGE_DECODER_SUCCESS || !decoder) {
+        dlclose(androidLib);
+        return nullptr;
+    }
+    const AImageDecoderHeaderInfo *info = header(decoder);
+    int width = getWidth(info);
+    int height = getHeight(info);
+    int largest = width > height ? width : height;
+    if (targetMax > 0 && largest > targetMax) {
+        width = width * targetMax / largest;
+        height = height * targetMax / largest;
+        setSize(decoder, width, height);
+    }
+    setFormat(decoder, ANDROID_BITMAP_FORMAT_RGBA_8888);
+
+    jclass configClass = env->FindClass("android/graphics/Bitmap$Config");
+    jfieldID argbField = env->GetStaticFieldID(configClass, "ARGB_8888", "Landroid/graphics/Bitmap$Config;");
+    jobject config = env->GetStaticObjectField(configClass, argbField);
+    jclass bitmapClass = env->FindClass("android/graphics/Bitmap");
+    jmethodID createBitmap = env->GetStaticMethodID(
+            bitmapClass, "createBitmap", "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;");
+    jobject bitmap = env->CallStaticObjectMethod(bitmapClass, createBitmap, width, height, config);
+    void *pixels = nullptr;
+    AndroidBitmapInfo bitmapInfo{};
+    bool ok = bitmap && AndroidBitmap_getInfo(env, bitmap, &bitmapInfo) == ANDROID_BITMAP_RESULT_SUCCESS &&
+              AndroidBitmap_lockPixels(env, bitmap, &pixels) == ANDROID_BITMAP_RESULT_SUCCESS;
+    if (ok) {
+        size_t required = bitmapInfo.stride * static_cast<size_t>(height - 1) + minStride(decoder);
+        ok = decode(decoder, pixels, bitmapInfo.stride, required) == ANDROID_IMAGE_DECODER_SUCCESS;
+        AndroidBitmap_unlockPixels(env, bitmap);
+    }
+    destroy(decoder);
+    dlclose(androidLib);
+    return ok ? bitmap : nullptr;
 }
 
 extern "C" {
@@ -108,6 +172,32 @@ Java_com_yashikota_omaigenzo_LibRawBridge_decodeThumbnailFromFd(JNIEnv *env, job
     raw.recycle();
     munmap(mapped, static_cast<size_t>(statBuf.st_size));
     return result;
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_yashikota_omaigenzo_LibRawBridge_decodeThumbnailBitmapFromFd(
+        JNIEnv *env, jobject thiz, jint fd, jint targetMaxDimension) {
+    if (fd < 0) return nullptr;
+    struct stat statBuf{};
+    if (fstat(fd, &statBuf) != 0 || statBuf.st_size <= 0) return nullptr;
+    void *mapped = mmap(nullptr, statBuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    if (mapped == MAP_FAILED) return nullptr;
+
+    LibRaw raw;
+    jobject bitmap = nullptr;
+    if (raw.open_buffer(mapped, static_cast<size_t>(statBuf.st_size)) == LIBRAW_SUCCESS &&
+        raw.unpack_thumb() == LIBRAW_SUCCESS) {
+        libraw_processed_image_t *img = raw.dcraw_make_mem_thumb();
+        if (img) {
+            if (img->type == LIBRAW_IMAGE_JPEG && img->data_size > 0) {
+                bitmap = decodeJpegDirect(env, img->data, img->data_size, targetMaxDimension);
+            }
+            LibRaw::dcraw_clear_mem(img);
+        }
+    }
+    raw.recycle();
+    munmap(mapped, static_cast<size_t>(statBuf.st_size));
+    return bitmap;
 }
 
 JNIEXPORT jobject JNICALL

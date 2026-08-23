@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import com.yashikota.omaigenzo.data.ByteBudgetLruCache
@@ -52,6 +53,7 @@ class LibRawBridge {
     external fun getMetadata(filePath: String): String
     external fun decodeThumbnail(filePath: String): ByteArray?
     external fun decodeThumbnailFromFd(fd: Int): ByteArray?
+    external fun decodeThumbnailBitmapFromFd(fd: Int, targetMaxDimension: Int): Bitmap?
     external fun decodeFullRaw(filePath: String, halfSize: Boolean): Bitmap?
 
     fun parseExif(filePath: String): ExifInfo {
@@ -115,6 +117,15 @@ class LibRawBridge {
 
         if (isRaw) {
             if (fastMode) {
+                val directBitmap = if (uri != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use {
+                        decodeThumbnailBitmapFromFd(it.fd, targetMaxDimension)
+                    }
+                } else {
+                    null
+                }
+                if (directBitmap != null) return@withContext directBitmap
+
                 val thumbBytes = if (uri != null) {
                     context.contentResolver.openFileDescriptor(uri, "r")?.use { decodeThumbnailFromFd(it.fd) }
                 } else {
