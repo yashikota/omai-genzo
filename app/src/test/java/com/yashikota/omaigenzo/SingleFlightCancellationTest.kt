@@ -69,11 +69,23 @@ class SingleFlightCancellationTest {
         val flight = SuspendSingleFlight<String, Int?>(this)
         var decodes = 0
 
-        val first = launch { flight.run("k", cached = { null }) { decodes++; delay(1_000); 1 } }
+        val first = launch {
+            flight.run("k", cached = { null }) {
+                decodes++
+                delay(1_000)
+                1
+            }
+        }
         testScheduler.advanceTimeBy(10)
         first.cancelAndJoin()
 
-        val second = async { flight.run("k", cached = { null }) { decodes++; delay(10); 2 } }
+        val second = async {
+            flight.run("k", cached = { null }) {
+                decodes++
+                delay(10)
+                2
+            }
+        }
         advanceUntilIdle()
 
         assertEquals(2, second.await())
@@ -85,7 +97,14 @@ class SingleFlightCancellationTest {
         val flight = SuspendSingleFlight<String, Int?>(CoroutineScope(coroutineContext + SupervisorJob()))
         val boom = IllegalStateException("decode failed")
 
-        val a = async { runCatching { flight.run("k", cached = { null }) { delay(10); throw boom } } }
+        val a = async {
+            runCatching {
+                flight.run("k", cached = { null }) {
+                    delay(10)
+                    throw boom
+                }
+            }
+        }
         val b = async { runCatching { flight.run("k", cached = { null }) { error("joined") } } }
         advanceUntilIdle()
 
