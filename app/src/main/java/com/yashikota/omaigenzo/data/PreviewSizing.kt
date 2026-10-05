@@ -7,4 +7,10 @@ object PreviewSizing {
         while (maxOf(width, height) / sample > targetMaxDimension) sample *= 2
         return sample
     }
+
+    /** ARGB_8888 bytes of a 4:3 image whose long edge is [targetMaxDimension]. */
+    fun estimateBytes(targetMaxDimension: Int): Long {
+        val long = targetMaxDimension.toLong()
+        return long * (long * 3 / 4) * 4
+    }
 }
