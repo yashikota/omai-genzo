@@ -20,6 +20,11 @@ spotless {
     }
 }
 
+// -PomaiAbis=arm64-v8a builds only that ABI. LibRaw is compiled from source per ABI, so on CI and on
+// phones-only setups this roughly halves native build time.
+val requestedAbis: Set<String>? = providers.gradleProperty("omaiAbis").orNull
+    ?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
+
 android {
     namespace = "com.yashikota.omaigenzo"
     compileSdk = 35
@@ -49,7 +54,7 @@ android {
         debug {
             // x86_64 is only for emulators.
             ndk {
-                abiFilters.addAll(setOf("arm64-v8a", "x86_64"))
+                abiFilters.addAll(requestedAbis ?: setOf("arm64-v8a", "x86_64"))
             }
         }
         release {
@@ -60,7 +65,7 @@ android {
                 "proguard-rules.pro"
             )
             ndk {
-                abiFilters.add("arm64-v8a")
+                abiFilters.addAll(requestedAbis ?: setOf("arm64-v8a"))
             }
         }
         // Release-grade code (R8, optimised native) signed with the debug key, for on-device benchmarks.

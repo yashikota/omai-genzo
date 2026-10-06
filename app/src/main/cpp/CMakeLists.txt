@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project("androidlibrawtest")
 
+# Recompiling LibRaw is the bulk of a native build. Use ccache when the machine has it.
+find_program(CCACHE_PROGRAM ccache)
+if (CCACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+endif()
+
 # Collect LibRaw source files
 file(GLOB_RECURSE LIBRAW_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/libraw/src/*.cpp"
