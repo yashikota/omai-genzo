@@ -15,9 +15,12 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertNotNull
 import org.junit.Assume.assumeTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.Timeout
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * End-to-end preview latency on a real device, using the production decode pipeline.
@@ -26,7 +29,7 @@ import java.io.File
  *
  *   adb push ./sample-photos/. /sdcard/Android/data/com.yashikota.omaigenzo/files/bench/
  *   adb shell am instrument -w -e class com.yashikota.omaigenzo.PreviewDecodeBenchmark \
- *       [-e benchDir <dir>] [-e thinkMs 300] [-e rounds 3] \
+ *       [-e benchDir <dir>] [-e thinkMs 300] [-e rounds 3] [-e hardware false] \
  *       com.yashikota.omaigenzo.test/androidx.test.runner.AndroidJUnitRunner
  *
  * Results are printed as INSTRUMENTATION_STATUS lines, logged under the OmaiBench tag, appended to
@@ -34,6 +37,10 @@ import java.io.File
  */
 @RunWith(AndroidJUnit4::class)
 class PreviewDecodeBenchmark {
+
+    // A stuck decode must fail with a stack trace instead of hanging the whole run (CI saw a 28 minute hang).
+    @get:Rule
+    val timeout: Timeout = Timeout(5, TimeUnit.MINUTES)
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
@@ -43,12 +50,16 @@ class PreviewDecodeBenchmark {
     private val thinkMs = arguments.getString("thinkMs")?.toLongOrNull() ?: 300L
     private val rounds = arguments.getString("rounds")?.toIntOrNull() ?: 3
 
+    // -e hardware false decodes into software bitmaps; result names carry _hw / _sw so runs stay separable.
+    private val hardware = arguments.getString("hardware") != "false"
+
     private lateinit var bridge: LibRawBridge
     private lateinit var photos: List<PhotoItem>
 
     @Before
     fun setUp() {
         PerfLogger.initialize(context)
+        LibRawBridge.hardwareDecodeEnabled = hardware
         val entries = benchDir.listFiles().orEmpty()
             .filter { it.isFile }
             .map { ScannedFileEntry(fullName = it.name, localPath = it.absolutePath, size = it.length(), modifiedAt = it.lastModified()) }
@@ -159,7 +170,8 @@ class PreviewDecodeBenchmark {
         report(label, samples, extra = "\"prefetch_entries\":$prefetchEntries,\"think_ms\":$thinkMs,\"prefetch_hit_ratio\":${hits.toDouble() / samples.size}")
     }
 
-    private fun report(name: String, nanos: List<Long>, extra: String = "") {
+    private fun report(baseName: String, nanos: List<Long>, extra: String = "") {
+        val name = baseName + if (hardware) "_hw" else "_sw"
         val sorted = nanos.sorted()
         fun percentile(p: Double) = sorted[((sorted.size - 1) * p).toInt()] / 1e6
         val json = buildString {

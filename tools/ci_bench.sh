@@ -19,16 +19,40 @@ adb shell mkdir -p "$REMOTE/bench" "$REMOTE/perf"
 # (and a file created here by the shell user might not be appendable by the app).
 adb push "$FIXTURES/." "$REMOTE/bench/"
 
-adb shell am instrument -w \
-  -e class com.yashikota.omaigenzo.PreviewDecodeBenchmark \
-  -e thinkMs "$THINK_MS" -e rounds "$ROUNDS" \
-  "$PKG.test/androidx.test.runner.AndroidJUnitRunner" | tee "$OUT/instrument.txt"
+# Whatever happens, keep the device log: it is the only way to see why a run hung or crashed.
+trap 'adb logcat -d > "$OUT/logcat.txt" 2>&1 || true' EXIT
+adb logcat -c
 
-# `am instrument` exits 0 even when tests fail or are skipped, so check its report explicitly.
-if ! grep -qE '^OK \([0-9]+ tests?\)' "$OUT/instrument.txt"; then
-  echo "::error title=Benchmark::instrumentation did not report OK (failed, crashed or skipped for lack of photos)"
+# One instrumentation pass. $1 = hardware true|false. Returns non-zero if it failed, hung or was skipped.
+run_pass() {
+  local hardware=$1 log="$OUT/instrument-hardware-$1.txt"
+  # -r streams per-test results as they happen, and timeout bounds the pass.
+  timeout "${PASS_TIMEOUT:-12m}" adb shell am instrument -w -r \
+    -e class com.yashikota.omaigenzo.PreviewDecodeBenchmark \
+    -e thinkMs "$THINK_MS" -e rounds "$ROUNDS" -e hardware "$hardware" \
+    "$PKG.test/androidx.test.runner.AndroidJUnitRunner" | tee "$log" \
+    || echo "::warning title=Benchmark::hardware=$hardware instrumentation exited abnormally (timeout or crash)"
+
+  # `am instrument` exits 0 even when tests fail, so read the raw status codes:
+  # 0 = passed, -1 = error, -2 = failure, -3 = ignored, -4 = assumption failed (e.g. no photos found).
+  local passed bad
+  passed=$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$log" || true)
+  bad=$(grep -cE '^INSTRUMENTATION_STATUS_CODE: -[1-4]' "$log" || true)
+  if [ "$passed" -lt 1 ] || [ "$bad" -gt 0 ] || ! grep -q '^INSTRUMENTATION_CODE: -1' "$log"; then
+    echo "hardware=$hardware: passed=$passed bad=$bad"
+    grep -E '^INSTRUMENTATION_STATUS: (test|class|stack)=|Timed out|shortMsg|longMsg' "$log" | head -60 || true
+    return 1
+  fi
+}
+
+# Software bitmaps are the stable, required measurement. GPU-resident bitmaps are measured too, but
+# emulator GL is not a faithful GPU (an earlier run hung there), so that pass may fail without
+# failing the job: it exists to compare the two, not to gate.
+if ! run_pass false; then
+  echo "::error title=Benchmark::software-bitmap pass failed, hung or was skipped (see instrument-hardware-false.txt and logcat.txt)"
   exit 1
 fi
+run_pass true || echo "::warning title=Benchmark::hardware-bitmap pass did not complete on this emulator; its results are omitted"
 
 adb pull "$REMOTE/perf/bench-results.jsonl" "$OUT/bench-results.jsonl"
 adb pull "$REMOTE/perf/omai-perf.jsonl" "$OUT/omai-perf.jsonl" || true

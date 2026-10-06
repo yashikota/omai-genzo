@@ -1,6 +1,7 @@
 # The benchmark build is minified like release, but the instrumented benchmark in androidTest calls
 # into these classes directly, so their public surface must survive R8.
 -keep class com.yashikota.omaigenzo.LibRawBridge { public *; }
+-keep class com.yashikota.omaigenzo.LibRawBridge$Companion { public *; }
 -keep class com.yashikota.omaigenzo.DecodePriority { *; }
 -keep class com.yashikota.omaigenzo.PhotoItem { *; }
 -keep class com.yashikota.omaigenzo.data.PerfLogger { public *; }

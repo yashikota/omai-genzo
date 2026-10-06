@@ -63,6 +63,14 @@ class LibRawBridge(context: Context) {
         // Bitmaps above this edge are not decoded into GPU memory: older GPUs cap texture size.
         private const val MAX_HARDWARE_EDGE = 4096
 
+        /**
+         * Kill switch for GPU-resident decoding. Hardware bitmaps are the fast path on devices, but a
+         * driver or emulator that mishandles concurrent GL work can be switched back to software
+         * bitmaps without touching anything else (the benchmark also flips it to compare both).
+         */
+        @Volatile
+        var hardwareDecodeEnabled: Boolean = true
+
         private val cacheLock = Any()
 
         @Volatile private var budgetCache: PreviewBudget? = null
@@ -280,7 +288,7 @@ class LibRawBridge(context: Context) {
      */
     @RequiresApi(Build.VERSION_CODES.P)
     private fun decodeWithImageDecoder(source: ImageDecoder.Source, target: Int): Bitmap? {
-        val hardwareAllowed = target <= MAX_HARDWARE_EDGE
+        val hardwareAllowed = hardwareDecodeEnabled && target <= MAX_HARDWARE_EDGE
         if (hardwareAllowed) {
             try {
                 return imageDecoderPass(source, target, hardware = true)
