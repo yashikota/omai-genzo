@@ -1,0 +1,149 @@
+name: Benchmark
+
+# The runner has no physical phone: this measures on an x86_64 emulator, so absolute numbers say
+# nothing about a real ARM64 device (AGENTS.md: benchmark real hardware before claiming latency wins).
+# What it does give is a like-for-like comparison of a change against the latest main on the same
+# runner class, which catches regressions in scheduling, caching and the decode path.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - '*.kts'
+      - 'gradle.properties'
+      - 'tools/**'
+      - '.github/workflows/bench.yml'
+  workflow_dispatch:
+    inputs:
+      think_ms:
+        description: 'Time spent on each photo before swiping (0 = fastest swiping)'
+        default: '300'
+      rounds:
+        description: 'Repetitions of the cold-decode benchmarks'
+        default: '5'
+      raw_urls:
+        description: 'Optional: newline separated URLs of RAW samples to add to the fixtures'
+        default: ''
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  device-bench:
+    name: Emulator benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: read
+      actions: read # download the baseline artifact from the last main run
+
+    env:
+      THINK_MS: ${{ inputs.think_ms || '300' }}
+      ROUNDS: ${{ inputs.rounds || '5' }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Setup Java 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          # Same-repo PRs may write their own cache scope (a second push is then warm); forks stay read-only.
+          cache-read-only: ${{ github.event.pull_request.head.repo.fork == true }}
+
+      - name: Setup ccache
+        uses: ./.github/actions/setup-ccache
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Build benchmark APKs (x86_64 only, for the emulator)
+        run: ./gradlew assembleBenchmark assembleBenchmarkAndroidTest -PomaiAbis=x86_64
+
+      - name: Show ccache statistics
+        run: ccache --show-stats
+
+      - name: Generate JPEG fixtures
+        run: |
+          # A venv: the runner's system Python is externally managed (PEP 668).
+          python3 -m venv build/venv
+          build/venv/bin/pip install --quiet pillow
+          build/venv/bin/python -B tools/make_bench_fixtures.py build/bench-fixtures 8
+
+      - name: Add optional RAW samples
+        env:
+          RAW_URLS: ${{ inputs.raw_urls || vars.BENCH_RAW_URLS }}
+        run: |
+          # Embedded-JPEG decoding needs real RAW files. Set the BENCH_RAW_URLS repository variable
+          # (or the workflow input) to newline separated URLs of freely redistributable samples.
+          while IFS= read -r url; do
+            [ -z "$url" ] && continue
+            curl --fail --silent --show-error --location --retry 3 --output-dir build/bench-fixtures --remote-name "$url"
+          done <<< "${RAW_URLS:-}"
+          ls -la build/bench-fixtures
+
+      - name: Run benchmark on emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 33
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          script: ./tools/ci_bench.sh
+
+      - name: Fetch baseline from the latest main run
+        if: github.ref != 'refs/heads/main'
+        run: |
+          run_id=$(gh run list --workflow bench.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$run_id" ]; then
+            gh run download "$run_id" --name bench-main --dir build/baseline || echo "baseline artifact unavailable"
+          else
+            echo "no successful main run yet"
+          fi
+
+      - name: Report
+        run: |
+          {
+            echo "## Device benchmark (x86_64 emulator, API 33)"
+            echo "Relative comparison only: compare with the baseline below, not with a phone."
+            echo
+            echo "think time ${THINK_MS} ms, ${ROUNDS} rounds, fixtures: $(find build/bench-fixtures -type f | wc -l) files"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -f build/baseline/bench-results.jsonl ]; then
+            echo "Baseline = latest successful run on main. Warnings fire for a p50 regression above 30%." >> "$GITHUB_STEP_SUMMARY"
+            python3 -B tools/perf_report.py build/baseline/bench-results.jsonl build/bench/bench-results.jsonl --warn-regression 30 >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No baseline available yet (first run on main), showing this run only." >> "$GITHUB_STEP_SUMMARY"
+            python3 -B tools/perf_report.py build/bench/bench-results.jsonl >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ github.ref == 'refs/heads/main' && 'bench-main' || format('bench-run-{0}', github.run_id) }}
+          path: build/bench
+          if-no-files-found: warn
+          retention-days: 90

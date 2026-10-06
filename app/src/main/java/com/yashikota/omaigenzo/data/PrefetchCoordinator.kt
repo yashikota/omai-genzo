@@ -4,6 +4,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -18,11 +20,36 @@ data class PrefetchRequest(
     val priority: PrefetchPriority,
 )
 
+object PrefetchPlanner {
+    /**
+     * Photos to decode ahead of the user, most urgent first. [direction] is the way the user is
+     * moving: the photo they just left is the least likely to be needed, so it goes last.
+     */
+    fun plan(currentIndex: Int, totalSize: Int, direction: Int, maxEntries: Int): List<PrefetchRequest> {
+        if (totalSize <= 1 || maxEntries <= 0) return emptyList()
+        val step = if (direction < 0) -1 else 1
+        val requests = ArrayList<PrefetchRequest>(maxEntries)
+
+        fun add(offset: Int, priority: PrefetchPriority) {
+            val index = currentIndex + offset
+            if (requests.size < maxEntries && index in 0 until totalSize) requests += PrefetchRequest(index, priority)
+        }
+
+        add(step, PrefetchPriority.IMMEDIATE_NEXT)
+        add(step * 2, PrefetchPriority.LOOKAHEAD)
+        add(step * 3, PrefetchPriority.LOOKAHEAD)
+        add(-step, PrefetchPriority.PREVIOUS)
+        return requests
+    }
+}
+
 class PrefetchCoordinator(
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    @Volatile var maxEntries: Int = 3,
 ) {
-    private val scope = CoroutineScope(dispatcher)
-    private var currentPrefetchJob: Job? = null
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    private var currentGeneration: Job? = null
+    private var lastIndex = -1
 
     private val _latestActiveIndex = AtomicInteger(0)
     val latestActiveIndex: Int
@@ -30,41 +57,30 @@ class PrefetchCoordinator(
 
     var onPrefetchRequested: (suspend (request: PrefetchRequest) -> Unit)? = null
 
+    /** Every call starts a new generation; work from older generations is cancelled and never runs. */
     fun updateCurrentIndex(currentIndex: Int, totalSize: Int) {
         _latestActiveIndex.set(currentIndex)
+        currentGeneration?.cancel()
 
-        currentPrefetchJob?.cancel()
+        val direction = if (lastIndex >= 0 && currentIndex < lastIndex) -1 else 1
+        lastIndex = currentIndex
 
-        if (totalSize <= 1) return
+        val requests = PrefetchPlanner.plan(currentIndex, totalSize, direction, maxEntries)
+        if (requests.isEmpty()) return
 
-        val requests = mutableListOf<PrefetchRequest>()
-
-        // 1. Next photo (Highest prefetch priority)
-        val nextIdx = currentIndex + 1
-        if (nextIdx < totalSize) {
-            requests.add(PrefetchRequest(nextIdx, PrefetchPriority.IMMEDIATE_NEXT))
-        }
-
-        // 2. Previous photo (For instant undo/back)
-        val prevIdx = currentIndex - 1
-        if (prevIdx >= 0) {
-            requests.add(PrefetchRequest(prevIdx, PrefetchPriority.PREVIOUS))
-        }
-
-        // 3. Ahead photo (+2)
-        val aheadIdx = currentIndex + 2
-        if (aheadIdx < totalSize) {
-            requests.add(PrefetchRequest(aheadIdx, PrefetchPriority.LOOKAHEAD))
-        }
-
-        currentPrefetchJob = scope.launch {
-            for (req in requests) {
-                onPrefetchRequested?.invoke(req)
+        val generation = SupervisorJob(scope.coroutineContext[Job])
+        currentGeneration = generation
+        // Launched in priority order, so a dispatcher with limited parallelism starts the most
+        // urgent photo first while still decoding several at once.
+        for (request in requests) {
+            scope.launch(generation) {
+                ensureActive()
+                onPrefetchRequested?.invoke(request)
             }
         }
     }
 
     fun cancelAll() {
-        currentPrefetchJob?.cancel()
+        currentGeneration?.cancel()
     }
 }

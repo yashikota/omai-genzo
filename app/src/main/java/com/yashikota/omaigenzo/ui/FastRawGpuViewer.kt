@@ -26,6 +26,12 @@ import kotlinx.coroutines.sync.withLock
 
 private const val TAG = "FastRawGpuViewer"
 
+/**
+ * Full-resolution RAW inspection on the GPU. This unpacks the whole RAW, so it is deliberately not
+ * part of the selection path (which shows the embedded JPEG instead). The mosaic shader still
+ * lacks CFA-pattern, crop, orientation and aspect handling, so it must not be wired into the app
+ * before it has been validated on a device.
+ */
 @Composable
 fun FastRawGpuViewer(
     photo: PhotoItem,

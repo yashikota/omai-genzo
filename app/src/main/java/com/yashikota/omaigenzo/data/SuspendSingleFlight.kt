@@ -1,35 +1,65 @@
 package com.yashikota.omaigenzo.data
 
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
-class SuspendSingleFlight<K : Any, V> {
+/**
+ * Deduplicates concurrent work per key.
+ *
+ * The producer runs on [scope], not on the first caller, so cancelling one caller (for example a
+ * stale prefetch) never fails callers that joined the same flight later. The work is cancelled only
+ * once the last waiter has left, so abandoned speculative work stops as early as possible.
+ * [scope] must use a [SupervisorJob] so a failing producer is reported to its waiters instead of
+ * tearing the scope down.
+ */
+class SuspendSingleFlight<K : Any, V>(
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+) {
+    private class Flight<V>(val deferred: Deferred<V>) {
+        var waiters = 0
+    }
+
     private val mutex = Mutex()
-    private val jobs = HashMap<K, CompletableDeferred<V>>()
+    private val flights = HashMap<K, Flight<V>>()
 
     suspend fun run(key: K, cached: () -> V?, producer: suspend () -> V): V {
         cached()?.let { return it }
-        var leader = false
-        val result = mutex.withLock {
+        var joined = false
+        val flight = mutex.withLock {
             cached()?.let { return it }
-            jobs[key] ?: CompletableDeferred<V>().also {
-                jobs[key] = it
-                leader = true
-            }
+            val existing = flights[key]
+            joined = existing != null
+            val flight = existing ?: Flight(scope.async { producer() }).also { flights[key] = it }
+            flight.waiters++
+            flight
         }
-        if (!leader) {
+        if (joined) {
             PerfLogger.event("single_flight_join", "\"key\":\"${PerfLogger.escape(key.toString())}\"")
-            return result.await()
         }
-
-        return try {
-            producer().also(result::complete)
-        } catch (error: Throwable) {
-            result.completeExceptionally(error)
-            throw error
+        try {
+            return flight.deferred.await()
         } finally {
-            mutex.withLock { jobs.remove(key, result) }
+            release(key, flight)
+        }
+    }
+
+    private suspend fun release(key: K, flight: Flight<V>) {
+        // Must complete even when the caller is already cancelled, otherwise waiters leak.
+        withContext(NonCancellable) {
+            mutex.withLock {
+                flight.waiters--
+                if (flight.waiters == 0) {
+                    if (flights[key] === flight) flights.remove(key)
+                    flight.deferred.cancel()
+                }
+            }
         }
     }
 }

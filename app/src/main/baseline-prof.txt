@@ -1,0 +1,4 @@
+# Baseline profile for the swipe hot path. App code is small, so every app method is precompiled
+# instead of waiting for the JIT to discover it during the first swipes.
+HSPLcom/yashikota/omaigenzo/**->**(**)**
+Lcom/yashikota/omaigenzo/**;

@@ -47,7 +47,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PerfLogger.initialize(applicationContext)
-        libRawBridge = LibRawBridge()
+        libRawBridge = LibRawBridge(applicationContext)
 
         setContent {
             OmaiGenzoTheme {

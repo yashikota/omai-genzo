@@ -19,6 +19,10 @@ import java.util.concurrent.atomic.AtomicLong
 object PerfLogger {
     private const val TAG = "OmaiPerf"
     private const val MAX_LOG_BYTES = 64L * 1024L * 1024L
+
+    // Debug.getPss() walks /proc smaps and the battery reads are Binder calls: sampling them every
+    // second used up measurable CPU and battery on the very runs they are meant to measure.
+    private const val SAMPLE_INTERVAL_SECONDS = 5L
     private val queue = ArrayBlockingQueue<String>(65_536)
     private val dropped = AtomicLong()
     private val writer = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "omai-perf-writer") }
@@ -44,7 +48,7 @@ object PerfLogger {
                     "\"cores\":${Runtime.getRuntime().availableProcessors()},\"heap_max\":${Runtime.getRuntime().maxMemory()}," +
                     "\"log_path\":\"${escape(outputFile!!.absolutePath)}\"",
             )
-            sampler.scheduleAtFixedRate({ sampleSystem(appContext) }, 0L, 1L, TimeUnit.SECONDS)
+            sampler.scheduleAtFixedRate({ sampleSystem(appContext) }, 0L, SAMPLE_INTERVAL_SECONDS, TimeUnit.SECONDS)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 appContext.getSystemService(PowerManager::class.java).addThermalStatusListener { status ->
                     event("thermal", "\"status\":$status")

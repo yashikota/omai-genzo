@@ -1,0 +1,33 @@
+name: Setup ccache
+description: >
+  LibRaw is compiled from source for every ABI and is most of a clean native build. Its sources
+  rarely change, so a persisted compiler cache removes most of that work. CMakeLists.txt picks
+  ccache up automatically when it is on PATH.
+
+runs:
+  using: composite
+  steps:
+    - name: Install ccache
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq ccache
+
+    - name: Restore compiler cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ccache
+        key: ccache-${{ runner.os }}-${{ hashFiles('app/src/main/cpp/CMakeLists.txt', '.gitmodules') }}-${{ github.sha }}
+        restore-keys: |
+          ccache-${{ runner.os }}-${{ hashFiles('app/src/main/cpp/CMakeLists.txt', '.gitmodules') }}-
+          ccache-${{ runner.os }}-
+
+    - name: Configure ccache
+      shell: bash
+      run: |
+        {
+          echo "CCACHE_MAXSIZE=1G"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          echo "CCACHE_COMPILERCHECK=content"
+        } >> "$GITHUB_ENV"
+        ccache --zero-stats

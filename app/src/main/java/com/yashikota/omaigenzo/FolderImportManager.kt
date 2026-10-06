@@ -43,7 +43,7 @@ class FolderImportManager(val context: Context) {
     private val _importProgress = MutableStateFlow(ImportProgress())
     val importProgress: StateFlow<ImportProgress> = _importProgress.asStateFlow()
 
-    private val libRawBridge = LibRawBridge()
+    private val libRawBridge = LibRawBridge(context)
 
     val sessionsDir: File
         get() = File(context.filesDir, "imported_sessions").apply { if (!exists()) mkdirs() }

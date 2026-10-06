@@ -20,9 +20,21 @@ spotless {
     }
 }
 
+// -PomaiAbis=arm64-v8a builds only that ABI. LibRaw is compiled from source per ABI, so on CI and on
+// phones-only setups this roughly halves native build time.
+val requestedAbis: Set<String>? = providers.gradleProperty("omaiAbis").orNull
+    ?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
+
 android {
     namespace = "com.yashikota.omaigenzo"
     compileSdk = 35
+
+    // The NDK that ubuntu-24.04 GitHub runners ship. AGP's default (27.0.12077973) is not installed
+    // there, so every CI run used to download it, which cost 20-70 seconds depending on the network.
+    ndkVersion = "27.3.13750724"
+
+    // Instrumented benchmarks run against release-grade code, not the debug build.
+    testBuildType = "benchmark"
 
     defaultConfig {
         applicationId = "com.yashikota.omaigenzo"
@@ -32,6 +44,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testProguardFiles("benchmark-rules.pro")
 
         externalNativeBuild {
             cmake {
@@ -39,18 +52,33 @@ android {
             }
         }
 
-        ndk {
-            abiFilters.addAll(setOf("arm64-v8a", "x86_64"))
-        }
     }
 
     buildTypes {
+        debug {
+            // x86_64 is only for emulators.
+            ndk {
+                abiFilters.addAll(requestedAbis ?: setOf("arm64-v8a", "x86_64"))
+            }
+        }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            ndk {
+                abiFilters.addAll(requestedAbis ?: setOf("arm64-v8a"))
+            }
+        }
+        // Release-grade code (R8, optimised native) signed with the debug key, for on-device benchmarks.
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            isDebuggable = false
+            proguardFiles("benchmark-rules.pro")
         }
     }
     compileOptions {
@@ -101,6 +129,11 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation("androidx.documentfile:documentfile:1.0.1")
+    // Installs the baseline profile (src/main/baseline-prof.txt) so the first swipe is not interpreted.
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation("androidx.test:runner:1.6.2")
 
     testImplementation(libs.junit)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")

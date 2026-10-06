@@ -11,6 +11,30 @@
 
 namespace omaigenzo {
 
+namespace {
+
+// A GL context can be current on one thread at a time, and Kotlin calls into the engine from
+// different IO threads. Every entry point therefore binds the context for its own duration and
+// always releases it, otherwise the next call from another thread fails with EGL_BAD_ACCESS.
+class EglScope {
+public:
+    EglScope(EGLDisplay display, EGLSurface surface, EGLContext context) : mDisplay(display) {
+        mBound = eglMakeCurrent(display, surface, surface, context) == EGL_TRUE;
+    }
+    ~EglScope() {
+        if (mBound) eglMakeCurrent(mDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    }
+    EglScope(const EglScope&) = delete;
+    EglScope& operator=(const EglScope&) = delete;
+    bool ok() const { return mBound; }
+
+private:
+    EGLDisplay mDisplay;
+    bool mBound = false;
+};
+
+}  // namespace
+
 static const char* VERTEX_SHADER_SOURCE = R"glsl(#version 300 es
 layout(location = 0) in vec2 a_position;
 layout(location = 1) in vec2 a_texCoord;
@@ -132,6 +156,12 @@ bool FastGpuEngine::init(ANativeWindow* window) {
         return false;
     }
 
+    EglScope scope(mDisplay, mSurface, mContext);
+    if (!scope.ok()) {
+        LOGE("Failed to bind EGL context");
+        return false;
+    }
+
     if (!initShaders()) {
         LOGE("Failed to init Shaders");
         return false;
@@ -191,8 +221,6 @@ bool FastGpuEngine::initEGL() {
 
     mSurface = eglCreateWindowSurface(mDisplay, mConfig, mWindow, nullptr);
     if (mSurface == EGL_NO_SURFACE) return false;
-
-    if (!eglMakeCurrent(mDisplay, mSurface, mSurface, mContext)) return false;
 
     return true;
 }
@@ -294,180 +322,121 @@ bool FastGpuEngine::setupQuad() {
 
 void FastGpuEngine::resize(int width, int height) {
     std::lock_guard<std::mutex> lock(mEngineMutex);
+    // glViewport needs a bound context, which resize() does not have: render() applies it.
     mViewportWidth = width;
     mViewportHeight = height;
-    if (mIsInitialized) {
-        glViewport(0, 0, width, height);
+}
+
+const uint16_t* FastGpuEngine::extractMosaic(LibRaw& raw, int& width, int& height, RawMetadata& metadata) {
+    width = raw.imgdata.sizes.raw_width > 0 ? raw.imgdata.sizes.raw_width : raw.imgdata.sizes.width;
+    height = raw.imgdata.sizes.raw_height > 0 ? raw.imgdata.sizes.raw_height : raw.imgdata.sizes.height;
+    if (width <= 0 || height <= 0) return nullptr;
+
+    const uint16_t* mosaic = raw.imgdata.rawdata.raw_image;
+    if (!mosaic && raw.imgdata.image) mosaic = reinterpret_cast<const uint16_t*>(raw.imgdata.image);
+    if (!mosaic) return nullptr;
+
+    metadata.blackLevel = static_cast<float>(raw.imgdata.color.cblack[0]);
+    if (metadata.blackLevel <= 0.0f) metadata.blackLevel = static_cast<float>(raw.imgdata.color.black);
+    metadata.whiteLevel = static_cast<float>(raw.imgdata.color.maximum);
+    if (metadata.whiteLevel <= metadata.blackLevel) metadata.whiteLevel = 16383.0f;
+
+    const float* camMul = raw.imgdata.color.cam_mul;
+    if (camMul[1] > 0.0f) {
+        metadata.camWb[0] = camMul[0] / camMul[1];
+        metadata.camWb[1] = 1.0f;
+        metadata.camWb[2] = camMul[2] / camMul[1];
+        metadata.camWb[3] = camMul[3] / camMul[1];
+    } else {
+        metadata.camWb[0] = 1.8f;
+        metadata.camWb[1] = 1.0f;
+        metadata.camWb[2] = 1.5f;
+        metadata.camWb[3] = 1.0f;
     }
+
+    for (int r = 0; r < 3; r++) {
+        for (int c = 0; c < 3; c++) {
+            metadata.colorMatrix[r * 3 + c] = raw.imgdata.color.rgb_cam[r][c];
+        }
+    }
+    metadata.rawWidth = width;
+    metadata.rawHeight = height;
+    return mosaic;
+}
+
+bool FastGpuEngine::uploadSlot(int slotIndex, int width, int height, const RawMetadata& metadata,
+                               const uint16_t* mosaic, const char* path) {
+    // Only the upload holds the lock: unpacking a RAW takes hundreds of milliseconds and must
+    // never stall render().
+    std::lock_guard<std::mutex> lock(mEngineMutex);
+    if (!mIsInitialized) return false;
+
+    EglScope scope(mDisplay, mSurface, mContext);
+    if (!scope.ok()) {
+        LOGE("Cannot bind EGL context for upload of %s", path);
+        return false;
+    }
+
+    TextureSlot& slot = mSlots[slotIndex];
+    glBindTexture(GL_TEXTURE_2D, slot.textureId);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16UI, width, height, 0, GL_RED_INTEGER, GL_UNSIGNED_SHORT, mosaic);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    if (glGetError() != GL_NO_ERROR) {
+        slot.isLoaded = false;
+        LOGE("Texture upload failed for %s", path);
+        return false;
+    }
+
+    slot.rawWidth = width;
+    slot.rawHeight = height;
+    slot.metadata = metadata;
+    slot.filePath = path;
+    slot.isLoaded = true;
+    LOGI("Uploaded RAW %s to texture slot %d (%dx%d)", path, slotIndex, width, height);
+    return true;
 }
 
 bool FastGpuEngine::loadPhotoFromPath(const char* path, int slotIndex) {
     if (slotIndex < 0 || slotIndex >= RING_SLOTS) return false;
 
-    std::lock_guard<std::mutex> lock(mEngineMutex);
     LibRaw raw;
-    if (raw.open_file(path) != LIBRAW_SUCCESS) {
-        LOGE("Failed to open RAW file: %s", path);
+    if (raw.open_file(path) != LIBRAW_SUCCESS || raw.unpack() != LIBRAW_SUCCESS) {
+        LOGE("Failed to open or unpack RAW file: %s", path);
         return false;
     }
 
-    if (raw.unpack() != LIBRAW_SUCCESS) {
-        LOGE("Failed to unpack RAW file: %s", path);
-        raw.recycle();
+    int width = 0;
+    int height = 0;
+    RawMetadata metadata;
+    const uint16_t* mosaic = extractMosaic(raw, width, height, metadata);
+    if (!mosaic) {
+        LOGE("No raw bayer data available in %s", path);
         return false;
     }
-
-    int rawWidth = raw.imgdata.sizes.raw_width;
-    int rawHeight = raw.imgdata.sizes.raw_height;
-    if (rawWidth <= 0 || rawHeight <= 0) {
-        rawWidth = raw.imgdata.sizes.width;
-        rawHeight = raw.imgdata.sizes.height;
-    }
-
-    uint16_t* bayerData = raw.imgdata.rawdata.raw_image;
-    if (!bayerData && raw.imgdata.image) {
-        bayerData = (uint16_t*)raw.imgdata.image;
-    }
-
-    if (!bayerData) {
-        LOGE("No raw bayer data available in unpacked RAW");
-        raw.recycle();
-        return false;
-    }
-
-    TextureSlot& slot = mSlots[slotIndex];
-    slot.rawWidth = rawWidth;
-    slot.rawHeight = rawHeight;
-    slot.filePath = path;
-
-    // Extract metadata
-    slot.metadata.blackLevel = (float)raw.imgdata.color.cblack[0];
-    if (slot.metadata.blackLevel <= 0.0f) slot.metadata.blackLevel = (float)raw.imgdata.color.black;
-    slot.metadata.whiteLevel = (float)raw.imgdata.color.maximum;
-    if (slot.metadata.whiteLevel <= slot.metadata.blackLevel) slot.metadata.whiteLevel = 16383.0f;
-
-    // Camera WB
-    slot.metadata.camWb[0] = raw.imgdata.color.cam_mul[0];
-    slot.metadata.camWb[1] = raw.imgdata.color.cam_mul[1];
-    slot.metadata.camWb[2] = raw.imgdata.color.cam_mul[2];
-    slot.metadata.camWb[3] = raw.imgdata.color.cam_mul[3];
-
-    // Normalize green multiplier
-    if (slot.metadata.camWb[1] > 0.0f) {
-        slot.metadata.camWb[0] /= slot.metadata.camWb[1];
-        slot.metadata.camWb[2] /= slot.metadata.camWb[1];
-        slot.metadata.camWb[1] = 1.0f;
-    } else {
-        slot.metadata.camWb[0] = 1.8f;
-        slot.metadata.camWb[1] = 1.0f;
-        slot.metadata.camWb[2] = 1.5f;
-    }
-
-    // Camera to sRGB Matrix (rgb_cam)
-    for (int r = 0; r < 3; r++) {
-        for (int c = 0; c < 3; c++) {
-            slot.metadata.colorMatrix[r * 3 + c] = raw.imgdata.color.rgb_cam[r][c];
-        }
-    }
-
-    // Upload to GPU Texture
-    if (mIsInitialized && eglMakeCurrent(mDisplay, mSurface, mSurface, mContext)) {
-        glBindTexture(GL_TEXTURE_2D, slot.textureId);
-        glTexImage2D(
-            GL_TEXTURE_2D, 0, GL_R16UI,
-            rawWidth, rawHeight, 0,
-            GL_RED_INTEGER, GL_UNSIGNED_SHORT,
-            bayerData
-        );
-        glBindTexture(GL_TEXTURE_2D, 0);
-        slot.isLoaded = true;
-    }
-
-    raw.recycle();
-    LOGI("Uploaded RAW %s to Texture Slot %d (%dx%d)", path, slotIndex, rawWidth, rawHeight);
-    return true;
+    return uploadSlot(slotIndex, width, height, metadata, mosaic, path);
 }
 
 bool FastGpuEngine::loadPhotoFromFd(int fd, int slotIndex) {
-    if (slotIndex < 0 || slotIndex >= RING_SLOTS || fd < 0) return false;
+    if (slotIndex < 0 || slotIndex >= RING_SLOTS) return false;
 
-    std::lock_guard<std::mutex> lock(mEngineMutex);
-    struct stat sb;
-    if (fstat(fd, &sb) != 0 || sb.st_size <= 0) {
-        LOGE("Failed to stat fd: %d", fd);
-        return false;
-    }
-
-    void* mapped = mmap(nullptr, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
-    if (mapped == MAP_FAILED) {
-        LOGE("Failed to mmap fd: %d", fd);
+    RawFileView view;
+    if (!view.open(fd, RawFileView::Access::Sequential)) {
+        LOGE("Failed to map fd %d", fd);
         return false;
     }
 
     LibRaw raw;
-    int ret = raw.open_buffer(mapped, sb.st_size);
-    if (ret != LIBRAW_SUCCESS) {
-        LOGE("Failed to open RAW buffer from mmap fd %d (code: %d)", fd, ret);
-        munmap(mapped, sb.st_size);
+    if (raw.open_buffer(view.data(), view.size()) != LIBRAW_SUCCESS || raw.unpack() != LIBRAW_SUCCESS) {
+        LOGE("Failed to open or unpack RAW from fd %d", fd);
         return false;
     }
 
-    if (raw.unpack() != LIBRAW_SUCCESS) {
-        LOGE("Failed to unpack RAW from mmap fd: %d", fd);
-        raw.recycle();
-        munmap(mapped, sb.st_size);
-        return false;
-    }
-
-    int rawWidth = raw.imgdata.sizes.raw_width > 0 ? raw.imgdata.sizes.raw_width : raw.imgdata.sizes.width;
-    int rawHeight = raw.imgdata.sizes.raw_height > 0 ? raw.imgdata.sizes.raw_height : raw.imgdata.sizes.height;
-
-    uint16_t* bayerData = raw.imgdata.rawdata.raw_image;
-    if (!bayerData && raw.imgdata.image) {
-        bayerData = (uint16_t*)raw.imgdata.image;
-    }
-
-    if (!bayerData) {
-        raw.recycle();
-        munmap(mapped, sb.st_size);
-        return false;
-    }
-
-    TextureSlot& slot = mSlots[slotIndex];
-    slot.rawWidth = rawWidth;
-    slot.rawHeight = rawHeight;
-
-    slot.metadata.blackLevel = (float)raw.imgdata.color.cblack[0];
-    if (slot.metadata.blackLevel <= 0.0f) slot.metadata.blackLevel = (float)raw.imgdata.color.black;
-    slot.metadata.whiteLevel = (float)raw.imgdata.color.maximum;
-    if (slot.metadata.whiteLevel <= slot.metadata.blackLevel) slot.metadata.whiteLevel = 16383.0f;
-
-    slot.metadata.camWb[0] = raw.imgdata.color.cam_mul[0] / (raw.imgdata.color.cam_mul[1] > 0 ? raw.imgdata.color.cam_mul[1] : 1.0f);
-    slot.metadata.camWb[1] = 1.0f;
-    slot.metadata.camWb[2] = raw.imgdata.color.cam_mul[2] / (raw.imgdata.color.cam_mul[1] > 0 ? raw.imgdata.color.cam_mul[1] : 1.0f);
-
-    for (int r = 0; r < 3; r++) {
-        for (int c = 0; c < 3; c++) {
-            slot.metadata.colorMatrix[r * 3 + c] = raw.imgdata.color.rgb_cam[r][c];
-        }
-    }
-
-    if (mIsInitialized && eglMakeCurrent(mDisplay, mSurface, mSurface, mContext)) {
-        glBindTexture(GL_TEXTURE_2D, slot.textureId);
-        glTexImage2D(
-            GL_TEXTURE_2D, 0, GL_R16UI,
-            rawWidth, rawHeight, 0,
-            GL_RED_INTEGER, GL_UNSIGNED_SHORT,
-            bayerData
-        );
-        glBindTexture(GL_TEXTURE_2D, 0);
-        slot.isLoaded = true;
-    }
-
-    raw.recycle();
-    munmap(mapped, sb.st_size);
-    LOGI("Successfully loaded RAW from fd %d to slot %d via zero-copy mmap (%dx%d)", fd, slotIndex, rawWidth, rawHeight);
-    return true;
+    int width = 0;
+    int height = 0;
+    RawMetadata metadata;
+    const uint16_t* mosaic = extractMosaic(raw, width, height, metadata);
+    if (!mosaic) return false;
+    return uploadSlot(slotIndex, width, height, metadata, mosaic, "fd");
 }
 
 void FastGpuEngine::setActiveSlot(int slotIndex) {
@@ -493,8 +462,10 @@ void FastGpuEngine::render() {
     std::lock_guard<std::mutex> lock(mEngineMutex);
     if (!mIsInitialized || mDisplay == EGL_NO_DISPLAY || mSurface == EGL_NO_SURFACE) return;
 
-    eglMakeCurrent(mDisplay, mSurface, mSurface, mContext);
+    EglScope scope(mDisplay, mSurface, mContext);
+    if (!scope.ok()) return;
 
+    if (mViewportWidth > 0 && mViewportHeight > 0) glViewport(0, 0, mViewportWidth, mViewportHeight);
     glClearColor(0.04f, 0.04f, 0.06f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -537,19 +508,20 @@ void FastGpuEngine::destroy() {
     std::lock_guard<std::mutex> lock(mEngineMutex);
     if (!mIsInitialized) return;
 
-    eglMakeCurrent(mDisplay, mSurface, mSurface, mContext);
-
-    for (int i = 0; i < RING_SLOTS; i++) {
-        if (mSlots[i].textureId != 0) {
-            glDeleteTextures(1, &mSlots[i].textureId);
-            mSlots[i].textureId = 0;
-            mSlots[i].isLoaded = false;
+    {
+        EglScope scope(mDisplay, mSurface, mContext);
+        for (int i = 0; i < RING_SLOTS; i++) {
+            if (mSlots[i].textureId != 0) {
+                glDeleteTextures(1, &mSlots[i].textureId);
+                mSlots[i].textureId = 0;
+                mSlots[i].isLoaded = false;
+            }
         }
-    }
 
-    if (mVAO) { glDeleteVertexArrays(1, &mVAO); mVAO = 0; }
-    if (mVBO) { glDeleteBuffers(1, &mVBO); mVBO = 0; }
-    if (mProgram) { glDeleteProgram(mProgram); mProgram = 0; }
+        if (mVAO) { glDeleteVertexArrays(1, &mVAO); mVAO = 0; }
+        if (mVBO) { glDeleteBuffers(1, &mVBO); mVBO = 0; }
+        if (mProgram) { glDeleteProgram(mProgram); mProgram = 0; }
+    }
 
     if (mDisplay != EGL_NO_DISPLAY) {
         eglMakeCurrent(mDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
