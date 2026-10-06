@@ -14,7 +14,20 @@ mkdir -p "$OUT"
 adb install -r -g app/build/outputs/apk/benchmark/app-benchmark.apk
 adb install -r app/build/outputs/apk/androidTest/benchmark/app-benchmark-androidTest.apk
 
-adb shell mkdir -p "$REMOTE/bench" "$REMOTE/perf"
+# Let the app create its own storage directories. A directory created here by the shell user is not
+# writable by the app, and PerfLogger then fails on start (this is how the first working run died).
+# Launching the real activity first also smoke-tests the minified app: it must start without crashing.
+adb logcat -c
+adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+sleep 3
+if adb logcat -d -b crash | grep -q "Process: $PKG"; then
+  echo "::error title=Benchmark::the minified app crashed on launch"
+  adb logcat -d -b crash | grep -A25 "Process: $PKG" | head -60
+  exit 1
+fi
+adb shell am force-stop "$PKG"
+# Fixtures are only read by the app, so a shell-owned directory is fine for them.
+adb shell mkdir -p "$REMOTE/bench"
 # The emulator is created fresh for every run, so there is no stale bench-results.jsonl to clear
 # (and a file created here by the shell user might not be appendable by the app).
 adb push "$FIXTURES/." "$REMOTE/bench/"
