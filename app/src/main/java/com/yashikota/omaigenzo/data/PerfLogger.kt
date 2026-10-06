@@ -8,9 +8,7 @@ import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
-import java.io.BufferedWriter
 import java.io.File
-import java.io.FileWriter
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -25,6 +23,8 @@ object PerfLogger {
     private const val SAMPLE_INTERVAL_SECONDS = 5L
     private val queue = ArrayBlockingQueue<String>(65_536)
     private val dropped = AtomicLong()
+
+    @Volatile private var failures = 0L
     private val writer = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "omai-perf-writer") }
     private val sampler = Executors.newSingleThreadScheduledExecutor { runnable -> Thread(runnable, "omai-perf-sampler") }
 
@@ -77,26 +77,16 @@ object PerfLogger {
                 "\"java_used\":${runtime.totalMemory() - runtime.freeMemory()},\"java_total\":${runtime.totalMemory()}," +
                 "\"cpu_ms\":${Process.getElapsedCpuTime()},\"battery_pct\":${battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)}," +
                 "\"battery_current_ua\":${battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)}," +
-                "\"dropped_logs\":${dropped.get()}",
+                "\"dropped_logs\":${dropped.get()},\"write_failures\":$failures",
         )
     }
 
     private fun writerLoop() {
+        val logWriter = PerfLogWriter({ outputFile }, queue, MAX_LOG_BYTES)
         while (true) {
-            val line = queue.take()
-            val file = outputFile ?: continue
-            if (file.length() >= MAX_LOG_BYTES) rotate(file)
-            BufferedWriter(FileWriter(file, true), 64 * 1024).use { output ->
-                output.appendLine(line)
-                while (true) output.appendLine(queue.poll() ?: break)
-            }
+            logWriter.writeNextBatch()
+            failures = logWriter.failures.get()
         }
-    }
-
-    private fun rotate(file: File) {
-        val previous = File(file.parentFile, "omai-perf.1.jsonl")
-        if (previous.exists()) previous.delete()
-        file.renameTo(previous)
     }
 
     fun escape(value: String): String = buildString(value.length + 8) {

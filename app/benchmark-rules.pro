@@ -19,3 +19,10 @@
 # process on start (NoClassDefFoundError: androidx.tracing.Trace) and left `am instrument` silent.
 -keep class androidx.tracing.** { *; }
 -keep class androidx.test.** { *; }
+-keep class androidx.concurrent.futures.** { *; }
+# The test APK links against the app's copies of the Kotlin runtime, so they must all survive
+# (found by diffing the test APK's references against the minified app's classes).
+-keep class kotlin.** { *; }
+-keep class kotlinx.coroutines.** { *; }
+-keep class com.google.common.util.concurrent.ListenableFuture { *; }
+-dontwarn com.google.common.util.concurrent.**

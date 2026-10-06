@@ -80,6 +80,9 @@ jobs:
       - name: Build benchmark APKs (x86_64 only, for the emulator)
         run: ./gradlew assembleBenchmark assembleBenchmarkAndroidTest -PomaiAbis=x86_64
 
+      - name: Check the test APK still links against the minified app
+        run: tools/check_test_apk_links.sh
+
       - name: Show ccache statistics
         run: ccache --show-stats
 
@@ -88,7 +91,7 @@ jobs:
           # A venv: the runner's system Python is externally managed (PEP 668).
           python3 -m venv build/venv
           build/venv/bin/pip install --quiet pillow
-          build/venv/bin/python -B tools/make_bench_fixtures.py build/bench-fixtures 8
+          build/venv/bin/python -B tools/make_bench_fixtures.py build/bench-fixtures 16
 
       - name: Add optional RAW samples
         env:
