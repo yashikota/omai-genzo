@@ -3,6 +3,7 @@
 
   tools/perf_report.py omai-perf.jsonl                  # one run
   tools/perf_report.py before.jsonl after.jsonl         # side by side, with deltas
+  tools/perf_report.py a.jsonl b.jsonl --warn-regression 30
 
 Latencies are in milliseconds. Only events the app already writes are used.
 """
@@ -67,7 +68,7 @@ def summarise(events):
         "failed_decodes": sum(1 for e in by_name["preview_decode_end"] if not e.get("success")),
         "thermal_max": max((e.get("status", 0) for e in by_name["thermal"]), default=0),
         "dropped_logs": max((e.get("dropped_logs", 0) for e in by_name["system_sample"]), default=0),
-        "bench": {e["bench"]: e for e in by_name["bench_result"] if "bench" in e},
+        "bench": {e["bench"]: e for e in by_name["bench_result"] + by_name[None] if "bench" in e},
     }
     grouped = defaultdict(list)
     for event in decodes:
@@ -139,13 +140,35 @@ def render(summaries, names):
     return "\n".join(out)
 
 
+def regressions(before, after, threshold_percent):
+    found = []
+    for name, new in sorted(after["bench"].items()):
+        old = before["bench"].get(name)
+        if not old or not old["p50_ms"]:
+            continue
+        change = (new["p50_ms"] - old["p50_ms"]) / old["p50_ms"] * 100
+        if change > threshold_percent:
+            found.append((name, old["p50_ms"], new["p50_ms"], change))
+    return found
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("logs", nargs="+", help="one log, or two to compare (before after)")
+    parser.add_argument(
+        "--warn-regression",
+        type=float,
+        metavar="PERCENT",
+        help="print a GitHub ::warning to stderr for each benchmark whose p50 grew by more than PERCENT (never fails)",
+    )
     args = parser.parse_args(argv)
     if len(args.logs) > 2:
         parser.error("pass one log, or two to compare")
-    print(render([summarise(load(p)) for p in args.logs], args.logs))
+    summaries = [summarise(load(p)) for p in args.logs]
+    print(render(summaries, args.logs))
+    if args.warn_regression is not None and len(summaries) == 2:
+        for name, old, new, change in regressions(summaries[0], summaries[1], args.warn_regression):
+            print(f"::warning title=Benchmark regression::{name} p50 {old:.1f}ms -> {new:.1f}ms ({change:+.0f}%)", file=sys.stderr)
     return 0
 
 
