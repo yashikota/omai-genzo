@@ -91,7 +91,7 @@ jobs:
           # A venv: the runner's system Python is externally managed (PEP 668).
           python3 -m venv build/venv
           build/venv/bin/pip install --quiet pillow
-          build/venv/bin/python -B tools/make_bench_fixtures.py build/bench-fixtures 8
+          build/venv/bin/python -B tools/make_bench_fixtures.py build/bench-fixtures 16
 
       - name: Add optional RAW samples
         env:

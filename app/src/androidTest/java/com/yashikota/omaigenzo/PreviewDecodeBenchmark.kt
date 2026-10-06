@@ -12,7 +12,9 @@ import com.yashikota.omaigenzo.data.ScannedFileEntry
 import com.yashikota.omaigenzo.data.ZeroCopyFolderScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
@@ -66,12 +68,29 @@ class PreviewDecodeBenchmark {
         photos = ZeroCopyFolderScanner().groupAndCreatePhotoItems(entries)
         assumeTrue("Put at least 4 photos into $benchDir (see the class comment); found ${photos.size}", photos.size >= 4)
         bridge = LibRawBridge(context)
+        warmUp()
     }
 
-    private var versionSeed = 0L
+    /** The first decodes pay for JIT, class loading and page cache; keep that out of the numbers. */
+    private fun warmUp() {
+        if (warmedUp) return
+        photos.take(2).forEach { photo ->
+            load(photo, 2048, freshVersion(photo))
+            load(photo, 512, freshVersion(photo))
+        }
+        warmedUp = true
+    }
+
+    private companion object {
+        // JUnit builds a new instance per test while the bitmap caches live as long as the process, so a
+        // per-instance counter repeated the same versions in every test and later tests hit the cache
+        // of earlier ones (a "no prefetch" run showed a 100% hit ratio). One counter per process.
+        val versionSeed = java.util.concurrent.atomic.AtomicLong()
+        var warmedUp = false
+    }
 
     /** A fresh cache version makes every call a guaranteed cold decode without clearing caches. */
-    private fun freshVersion(photo: PhotoItem): Long = photo.modifiedAt + (++versionSeed) * 1_000_003L
+    private fun freshVersion(photo: PhotoItem): Long = photo.modifiedAt + versionSeed.incrementAndGet() * 1_000_003L
 
     private fun load(photo: PhotoItem, target: Int, version: Long, priority: DecodePriority = DecodePriority.VISIBLE) = runBlocking {
         bridge.loadPhotoBitmap(
@@ -155,6 +174,11 @@ class PreviewDecodeBenchmark {
         PreviewMetrics.reset()
         val samples = ArrayList<Long>()
         var hits = 0
+        // Every photo must start cold, otherwise this is measuring another test's cache.
+        assertTrue(
+            "the sequence must start with an empty cache",
+            photos.none { bridge.peekCached(it.fastDisplayPath, it.shouldUseRawRenderer(), true, 2048, versionOf(it), record = false) != null },
+        )
         for (index in 0 until photos.size - 1) {
             coordinator.updateCurrentIndex(index, photos.size)
             if (thinkMs > 0) Thread.sleep(thinkMs) // the user looking at the current photo
@@ -167,6 +191,7 @@ class PreviewDecodeBenchmark {
             if (wasCached) hits++
         }
         coordinator.cancelAll()
+        if (prefetchEntries == 0) assertEquals("without prefetch nothing may be cached ahead of the swipe", 0, hits)
         report(label, samples, extra = "\"prefetch_entries\":$prefetchEntries,\"think_ms\":$thinkMs,\"prefetch_hit_ratio\":${hits.toDouble() / samples.size}")
     }
 
