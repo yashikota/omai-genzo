@@ -29,6 +29,10 @@ android {
     namespace = "com.yashikota.omaigenzo"
     compileSdk = 35
 
+    // The NDK that ubuntu-24.04 GitHub runners ship. AGP's default (27.0.12077973) is not installed
+    // there, so every CI run used to download it, which cost 20-70 seconds depending on the network.
+    ndkVersion = "27.3.13750724"
+
     // Instrumented benchmarks run against release-grade code, not the debug build.
     testBuildType = "benchmark"
 
