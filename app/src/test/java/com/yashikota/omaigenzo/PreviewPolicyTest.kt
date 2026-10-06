@@ -111,6 +111,27 @@ class PreviewPolicyTest {
     }
 
     @Test
+    fun rankingTriesCoveringPreviewsSmallestFirstThenTheRestLargestFirst() {
+        val ranked = EmbeddedPreviewPolicy.rank(
+            listOf(jpeg(160, 120), jpeg(6_000, 4_000), jpeg(1_616, 1_080), jpeg(3_000, 2_000)),
+            targetMaxDimension = 2_048,
+        )
+        assertEquals(listOf(3_000, 6_000, 1_616), ranked.map { it.width })
+    }
+
+    @Test
+    fun rankingDropsPreviewsThatAreTooSmallForFullScreen() {
+        assertTrue(EmbeddedPreviewPolicy.rank(listOf(jpeg(160, 120)), 2_048).isEmpty())
+        assertEquals(1, EmbeddedPreviewPolicy.rank(listOf(jpeg(160, 120)), 512).size)
+    }
+
+    @Test
+    fun chooseIsTheHeadOfTheRanking() {
+        val candidates = listOf(jpeg(1_616, 1_080), jpeg(6_000, 4_000))
+        assertEquals(EmbeddedPreviewPolicy.rank(candidates, 2_048).firstOrNull(), EmbeddedPreviewPolicy.choose(candidates, 2_048))
+    }
+
+    @Test
     fun emptyCandidateListYieldsNothing() {
         assertNull(EmbeddedPreviewPolicy.choose(emptyList(), 2_048))
     }

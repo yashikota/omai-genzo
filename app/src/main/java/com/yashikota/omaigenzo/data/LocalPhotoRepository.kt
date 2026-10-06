@@ -105,11 +105,10 @@ class LocalPhotoRepository(
     override fun clearSession() {
         store.clear()
         photosState.value = store.photos
-        persistExecutor.execute {
-            synchronized(prefsLock) {
-                sessionGeneration++
-                preferences.edit { clear() }
-            }
+        // apply() only updates memory synchronously, so this is cheap and stays ordered with imports.
+        synchronized(prefsLock) {
+            sessionGeneration++
+            preferences.edit { clear() }
         }
         lastChangeState.value = System.currentTimeMillis()
     }

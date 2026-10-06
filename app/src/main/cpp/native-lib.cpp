@@ -228,6 +228,11 @@ Java_com_yashikota_omaigenzo_LibRawBridge_decodeRawFromFd(JNIEnv *env, jobject t
     const int width = img->width;
     const int height = img->height;
     jobject bitmap = createArgbBitmap(env, width, height);
+    if (env->ExceptionCheck()) {  // OutOfMemoryError: report "no bitmap" instead of crashing the caller
+        env->ExceptionClear();
+        LibRaw::dcraw_clear_mem(img);
+        return nullptr;
+    }
     AndroidBitmapInfo info{};
     void *pixels = nullptr;
     if (!bitmap || AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS ||

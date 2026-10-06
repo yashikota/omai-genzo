@@ -63,16 +63,19 @@ data class EmbeddedJpeg(val address: Long, val length: Long, val width: Int, val
 
 object EmbeddedPreviewPolicy {
     /**
-     * Smallest embedded JPEG that covers [targetMaxDimension]; otherwise the largest one, provided
-     * it is not so small that full-screen output would be a blur. Returning null lets the caller
-     * move on to reduced RAW processing, which is the last resort.
+     * Embedded JPEGs worth trying, best first: those that cover [targetMaxDimension], smallest
+     * first (cheapest to decode), then the larger-is-better remainder, as long as they are not so
+     * small that full-screen output would be a blur. Callers try them in order, so one corrupt entry
+     * costs another JPEG decode instead of a full RAW development.
      */
-    fun choose(candidates: List<EmbeddedJpeg>, targetMaxDimension: Int): EmbeddedJpeg? {
+    fun rank(candidates: List<EmbeddedJpeg>, targetMaxDimension: Int): List<EmbeddedJpeg> {
         val usable = candidates.filter { it.length > 0 && it.width > 0 && it.height > 0 }
-        usable.filter { it.maxDimension >= targetMaxDimension }.minByOrNull { it.maxDimension }?.let { return it }
-        val largest = usable.maxByOrNull { it.maxDimension } ?: return null
-        val acceptable = PreviewBucket.forTarget(targetMaxDimension) == PreviewBucket.THUMBNAIL ||
-            largest.maxDimension >= targetMaxDimension / 2
-        return largest.takeIf { acceptable }
+        val covering = usable.filter { it.maxDimension >= targetMaxDimension }.sortedBy { it.maxDimension }
+        val minimumAcceptable = if (PreviewBucket.forTarget(targetMaxDimension) == PreviewBucket.THUMBNAIL) 1 else targetMaxDimension / 2
+        val smaller = usable.filter { it.maxDimension < targetMaxDimension && it.maxDimension >= minimumAcceptable }
+            .sortedByDescending { it.maxDimension }
+        return covering + smaller
     }
+
+    fun choose(candidates: List<EmbeddedJpeg>, targetMaxDimension: Int): EmbeddedJpeg? = rank(candidates, targetMaxDimension).firstOrNull()
 }

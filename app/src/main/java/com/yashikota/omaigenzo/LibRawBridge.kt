@@ -234,20 +234,17 @@ class LibRawBridge(context: Context) {
                     val base = 3 + i * 4
                     EmbeddedJpeg(packed[base], packed[base + 1], packed[base + 2].toInt(), packed[base + 3].toInt())
                 }
-                val chosen = EmbeddedPreviewPolicy.choose(candidates, target)
-                if (chosen != null) {
-                    wrapDirect(chosen.address, chosen.length)?.let { buffer ->
-                        decodeJpegBuffer(buffer, target)?.let { decoded ->
-                            PerfLogger.event(
-                                "preview_decode_path",
-                                "\"path\":\"embedded_jpeg\",\"hardware\":${isGpuResident(decoded)}," +
-                                    "\"source\":\"${PerfLogger.escape(source)}\",\"compressed_bytes\":${chosen.length}," +
-                                    "\"embedded_width\":${chosen.width},\"embedded_height\":${chosen.height}," +
-                                    "\"candidates\":$count",
-                            )
-                            return decoded
-                        }
-                    }
+                for (chosen in EmbeddedPreviewPolicy.rank(candidates, target)) {
+                    val buffer = wrapDirect(chosen.address, chosen.length) ?: continue
+                    val decoded = decodeJpegBuffer(buffer, target) ?: continue
+                    PerfLogger.event(
+                        "preview_decode_path",
+                        "\"path\":\"embedded_jpeg\",\"hardware\":${isGpuResident(decoded)}," +
+                            "\"source\":\"${PerfLogger.escape(source)}\",\"compressed_bytes\":${chosen.length}," +
+                            "\"embedded_width\":${chosen.width},\"embedded_height\":${chosen.height}," +
+                            "\"candidates\":$count",
+                    )
+                    return decoded
                 }
             } finally {
                 closeView(handle)
