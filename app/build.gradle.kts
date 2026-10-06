@@ -39,18 +39,32 @@ android {
             }
         }
 
-        ndk {
-            abiFilters.addAll(setOf("arm64-v8a", "x86_64"))
-        }
     }
 
     buildTypes {
+        debug {
+            // x86_64 is only for emulators.
+            ndk {
+                abiFilters.addAll(setOf("arm64-v8a", "x86_64"))
+            }
+        }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            ndk {
+                abiFilters.add("arm64-v8a")
+            }
+        }
+        // Release-grade code (R8, optimised native) signed with the debug key, for on-device benchmarks.
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            isDebuggable = false
         }
     }
     compileOptions {
@@ -101,6 +115,11 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation("androidx.documentfile:documentfile:1.0.1")
+    // Installs the baseline profile (src/main/baseline-prof.txt) so the first swipe is not interpreted.
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation("androidx.test:runner:1.6.2")
 
     testImplementation(libs.junit)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")

@@ -26,6 +26,19 @@ target_include_directories(
     "${CMAKE_CURRENT_SOURCE_DIR}/libraw/libraw"
 )
 
+# Dead-strip unused decoders and keep symbols private; release additionally links with LTO.
+target_compile_options(
+    native-lib PRIVATE
+    -fvisibility=hidden
+    -ffunction-sections
+    -fdata-sections
+)
+# CMake's INTERPROCEDURAL_OPTIMIZATION asks for the gold linker, which NDK r27 no longer ships.
+if (CMAKE_BUILD_TYPE MATCHES "^(Release|RelWithDebInfo)$")
+    target_compile_options(native-lib PRIVATE -flto=thin)
+    target_link_options(native-lib PRIVATE -flto=thin)
+endif()
+
 # Compiler definitions
 target_compile_definitions(
     native-lib PRIVATE
@@ -54,4 +67,6 @@ target_link_libraries(
 target_link_options(
     native-lib PRIVATE
     "-Wl,-z,max-page-size=16384"
+    "-Wl,--gc-sections"
+    "-Wl,--exclude-libs,ALL"
 )
