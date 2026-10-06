@@ -27,6 +27,35 @@ tasks:
     cmds:
       - '{{.GRADLEW}} testAll --no-daemon'
 
+  test:native:
+    desc: Run host-side tests for the pure C++ pieces (JPEG probe, file view) under ASan/UBSan
+    cmds:
+      - mkdir -p build
+      - g++ -std=c++17 -O1 -g -fsanitize=address,undefined -Wall -Wextra -I app/src/main/cpp app/src/test/cpp/native_tests.cpp -o build/native_tests
+      - ./build/native_tests
+
+  test:tools:
+    desc: Run the perf report tool tests
+    cmds:
+      - python3 -m unittest discover -s tools -p 'test_*.py'
+
+  build:benchmark:
+    desc: Build the benchmark APK (R8 + optimised native, debug-signed) and its instrumented test APK
+    cmds:
+      - '{{.GRADLEW}} assembleBenchmark assembleBenchmarkAndroidTest --no-daemon'
+
+  bench:
+    desc: Run the on-device preview benchmark (adb device + photos in files/bench, see README). THINK_MS=0 measures the fastest-swiping case
+    vars:
+      THINK_MS: '{{.THINK_MS | default "300"}}'
+    cmds:
+      - '{{.GRADLEW}} connectedBenchmarkAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.thinkMs={{.THINK_MS}}'
+
+  bench:report:
+    desc: Summarise one OmaiPerf log, or compare two (task bench:report -- before.jsonl after.jsonl)
+    cmds:
+      - python3 tools/perf_report.py {{.CLI_ARGS}}
+
   build:
     desc: Build Debug APK (.apk)
     cmds:
@@ -53,4 +82,6 @@ tasks:
       - task: format
       - task: lint
       - task: test
+      - task: test:native
+      - task: test:tools
       - task: build

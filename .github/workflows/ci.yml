@@ -73,6 +73,12 @@ jobs:
       - name: Run Unit Tests
         run: aqua exec -- task test
 
+      - name: Run native tests (ASan/UBSan)
+        run: aqua exec -- task test:native
+
+      - name: Run tool tests
+        run: aqua exec -- task test:tools
+
   build:
     name: Build Debug APK
     needs: [lint, test]
@@ -103,6 +109,12 @@ jobs:
 
       - name: Build Debug APK
         run: aqua exec -- task build
+
+      - name: Build release APK (R8 and native LTO must keep compiling)
+        run: aqua exec -- task build:release
+
+      - name: Build benchmark APKs
+        run: aqua exec -- task build:benchmark
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

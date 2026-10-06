@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.ArrayDeque
 import java.util.concurrent.Executors
 
 class LocalPhotoRepository(
@@ -30,16 +29,12 @@ class LocalPhotoRepository(
     }
 
     private val preferences = context.getSharedPreferences("selection_session", Context.MODE_PRIVATE)
-    private val photosState = MutableStateFlow(loadPhotos())
+    private val store = PhotoSelectionStore(loadPhotos(), MAX_UNDO_DEPTH)
+    private val photosState = MutableStateFlow(store.photos)
     override val photos: StateFlow<List<PhotoItem>> = photosState.asStateFlow()
 
     private val lastChangeState = MutableStateFlow(System.currentTimeMillis())
     override val lastStateChangeTime: StateFlow<Long> = lastChangeState.asStateFlow()
-
-    private val historyStack = ArrayDeque<Pair<String, SelectionState>>()
-
-    /** photo id -> list index, so a swipe never scans the whole list. */
-    private var indexById: Map<String, Int> = buildIndex(photosState.value)
 
     // Selection writes never touch the UI thread: one tiny string, coalesced, on a single worker.
     private val persistExecutor = Executors.newSingleThreadExecutor { runnable ->
@@ -69,9 +64,8 @@ class LocalPhotoRepository(
                 savePhotos(scanned)
             }
         }
-        indexById = buildIndex(scanned)
-        photosState.value = scanned
-        historyStack.clear()
+        store.replace(scanned)
+        photosState.value = store.photos
         lastChangeState.value = System.currentTimeMillis()
         Result.success(Unit)
     } catch (e: Exception) {
@@ -80,33 +74,20 @@ class LocalPhotoRepository(
     }
 
     override fun updateSelection(photoId: String, state: SelectionState) {
-        val index = indexById[photoId] ?: return
-        val currentList = photosState.value
-        val oldItem = currentList.getOrNull(index) ?: return
-        pushHistory(oldItem.id, oldItem.selectionState)
-        commit(index, oldItem.copy(selectionState = state))
+        if (store.update(photoId, state)) publishSelection()
     }
 
     override fun undoLastSelection(): Boolean {
-        if (historyStack.isEmpty()) return false
-        val (photoId, previousState) = historyStack.pop()
-        val index = indexById[photoId] ?: return false
-        val item = photosState.value.getOrNull(index) ?: return false
-        commit(index, item.copy(selectionState = previousState))
+        if (!store.undo()) return false
+        publishSelection()
         return true
     }
 
-    private fun commit(index: Int, updated: PhotoItem) {
-        val next = ArrayList(photosState.value)
-        next[index] = updated
+    private fun publishSelection() {
+        val next = store.photos
         photosState.value = next
         selectionWriter.submit(PendingSelection(sessionGeneration, next))
         lastChangeState.value = System.currentTimeMillis()
-    }
-
-    private fun pushHistory(photoId: String, state: SelectionState) {
-        historyStack.push(photoId to state)
-        if (historyStack.size > MAX_UNDO_DEPTH) historyStack.removeLast()
     }
 
     override suspend fun exportAcceptedPhotos(outputUri: Uri): Result<Int> = try {
@@ -122,9 +103,8 @@ class LocalPhotoRepository(
     }
 
     override fun clearSession() {
-        photosState.value = emptyList()
-        indexById = emptyMap()
-        historyStack.clear()
+        store.clear()
+        photosState.value = store.photos
         persistExecutor.execute {
             synchronized(prefsLock) {
                 sessionGeneration++
@@ -132,12 +112,6 @@ class LocalPhotoRepository(
             }
         }
         lastChangeState.value = System.currentTimeMillis()
-    }
-
-    private fun buildIndex(photos: List<PhotoItem>): Map<String, Int> {
-        val map = HashMap<String, Int>(photos.size * 2)
-        photos.forEachIndexed { index, photo -> map[photo.id] = index }
-        return map
     }
 
     /** Written once per import. The per-swipe state lives in [KEY_SELECTION]. */

@@ -24,6 +24,9 @@ android {
     namespace = "com.yashikota.omaigenzo"
     compileSdk = 35
 
+    // Instrumented benchmarks run against release-grade code, not the debug build.
+    testBuildType = "benchmark"
+
     defaultConfig {
         applicationId = "com.yashikota.omaigenzo"
         minSdk = 24
@@ -32,6 +35,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testProguardFiles("benchmark-rules.pro")
 
         externalNativeBuild {
             cmake {
@@ -65,6 +69,7 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
             isDebuggable = false
+            proguardFiles("benchmark-rules.pro")
         }
     }
     compileOptions {
