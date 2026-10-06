@@ -64,6 +64,9 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          # Same-repo PRs may write their own cache scope (a second push is then warm); forks stay read-only.
+          cache-read-only: ${{ github.event.pull_request.head.repo.fork == true }}
 
       - name: Setup ccache
         uses: ./.github/actions/setup-ccache
@@ -76,6 +79,9 @@ jobs:
 
       - name: Build benchmark APKs (x86_64 only, for the emulator)
         run: ./gradlew assembleBenchmark assembleBenchmarkAndroidTest -PomaiAbis=x86_64
+
+      - name: Show ccache statistics
+        run: ccache --show-stats
 
       - name: Generate JPEG fixtures
         run: |
