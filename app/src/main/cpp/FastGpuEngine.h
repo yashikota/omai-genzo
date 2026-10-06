@@ -8,6 +8,7 @@
 #include <mutex>
 #include "ColorScience.h"
 #include "libraw/libraw.h"
+#include "RawFileView.h"
 
 namespace omaigenzo {
 
@@ -40,7 +41,13 @@ private:
     bool initShaders();
     bool setupQuad();
     bool compileShader(GLenum type, const char* source, GLuint& shader);
-    void updateUniforms();
+
+    // Reads size, levels, white balance and colour matrix out of an unpacked LibRaw instance.
+    // Returns the Bayer plane, or nullptr when there is none.
+    static const uint16_t* extractMosaic(LibRaw& raw, int& width, int& height, RawMetadata& metadata);
+    // Binds the GL context for the duration of the upload. The CPU-side unpack must already be done.
+    bool uploadSlot(int slotIndex, int width, int height, const RawMetadata& metadata,
+                    const uint16_t* mosaic, const char* path);
 
     ANativeWindow* mWindow = nullptr;
     EGLDisplay mDisplay = EGL_NO_DISPLAY;
