@@ -37,7 +37,7 @@ tasks:
   test:tools:
     desc: Run the perf report tool tests
     cmds:
-      - python3 -m unittest discover -s tools -p 'test_*.py'
+      - python3 -B -m unittest discover -s tools -p 'test_*.py'
 
   build:benchmark:
     desc: Build the benchmark APK (R8 + optimised native, debug-signed) and its instrumented test APK

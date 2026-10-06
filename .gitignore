@@ -33,3 +33,7 @@ Desktop.ini
 
 # Log files
 *.log
+
+# Python bytecode (tools/)
+__pycache__/
+*.pyc
