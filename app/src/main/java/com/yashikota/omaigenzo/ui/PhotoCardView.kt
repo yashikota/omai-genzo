@@ -1,6 +1,5 @@
 package com.yashikota.omaigenzo.ui
 
-import android.graphics.Bitmap
 import android.os.SystemClock
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -20,45 +19,74 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yashikota.omaigenzo.DecodePriority
 import com.yashikota.omaigenzo.LibRawBridge
 import com.yashikota.omaigenzo.PhotoItem
 import com.yashikota.omaigenzo.data.PerfLogger
+import com.yashikota.omaigenzo.data.PreviewBucket
 import com.yashikota.omaigenzo.ui.theme.*
+
+private const val GALLERY_THUMBNAIL_TARGET = 512
 
 @Composable
 fun PhotoCardView(
     photoItem: PhotoItem,
     libRawBridge: LibRawBridge,
     modifier: Modifier = Modifier,
-    scale: Float = 1f,
-    panX: Float = 0f,
-    panY: Float = 0f,
+    // Providers, not values: they are read inside graphicsLayer, so pinch/pan never recomposes the card.
+    scale: () -> Float = { 1f },
+    panX: () -> Float = { 0f },
+    panY: () -> Float = { 0f },
     showExifOverlay: Boolean = true,
     targetMaxDimension: Int = 2048,
+    priority: DecodePriority = DecodePriority.VISIBLE,
 ) {
-    val context = LocalContext.current
-    var bitmap by remember(photoItem.id) { mutableStateOf<Bitmap?>(null) }
-    var isLoading by remember(photoItem.id) { mutableStateOf(true) }
+    // A cache hit is resolved while composing, so the photo paints in the very same frame instead
+    // of showing a spinner first and swapping a frame later.
+    val cached = remember(photoItem.id, photoItem.modifiedAt, targetMaxDimension) {
+        libRawBridge.peekCached(
+            filePath = photoItem.fastDisplayPath,
+            isRaw = photoItem.shouldUseRawRenderer(),
+            targetMaxDimension = targetMaxDimension,
+            cacheVersion = photoItem.modifiedAt,
+        )
+    }
+    var bitmap by remember(photoItem.id, photoItem.modifiedAt, targetMaxDimension) { mutableStateOf(cached) }
+    var isLoading by remember(photoItem.id, photoItem.modifiedAt, targetMaxDimension) { mutableStateOf(cached == null) }
 
-    LaunchedEffect(photoItem.id) {
+    // While the full preview decodes, show the gallery thumbnail if one is already cached.
+    val placeholder = remember(photoItem.id, photoItem.modifiedAt, targetMaxDimension) {
+        if (cached != null || PreviewBucket.forTarget(targetMaxDimension) == PreviewBucket.THUMBNAIL) {
+            null
+        } else {
+            libRawBridge.peekCached(
+                filePath = photoItem.fastDisplayPath,
+                isRaw = photoItem.shouldUseRawRenderer(),
+                targetMaxDimension = GALLERY_THUMBNAIL_TARGET,
+                cacheVersion = photoItem.modifiedAt,
+                record = false,
+            )
+        }
+    }
+
+    LaunchedEffect(photoItem.id, photoItem.modifiedAt, targetMaxDimension) {
+        if (bitmap != null) return@LaunchedEffect
         val startedAt = SystemClock.elapsedRealtimeNanos()
         PerfLogger.event(
             "photo_visible_request",
             "\"id\":\"${PerfLogger.escape(photoItem.id)}\",\"source\":\"${PerfLogger.escape(photoItem.fastDisplayPath)}\"," +
-                "\"target\":$targetMaxDimension",
+                "\"target\":$targetMaxDimension,\"priority\":\"$priority\"",
         )
-        isLoading = true
         val loadedBitmap = libRawBridge.loadPhotoBitmap(
-            context = context,
             filePath = photoItem.fastDisplayPath,
             isRaw = photoItem.shouldUseRawRenderer(),
             fastMode = true,
             targetMaxDimension = targetMaxDimension,
             cacheVersion = photoItem.modifiedAt,
+            priority = priority,
         )
         bitmap = loadedBitmap
         isLoading = false
@@ -66,9 +94,12 @@ fun PhotoCardView(
             "photo_visible_result",
             "\"id\":\"${PerfLogger.escape(photoItem.id)}\",\"success\":${loadedBitmap != null}," +
                 "\"width\":${loadedBitmap?.width ?: 0},\"height\":${loadedBitmap?.height ?: 0}," +
-                "\"bytes\":${loadedBitmap?.byteCount ?: 0},\"duration_ns\":${SystemClock.elapsedRealtimeNanos() - startedAt}",
+                "\"bytes\":${loadedBitmap?.allocationByteCount ?: 0},\"duration_ns\":${SystemClock.elapsedRealtimeNanos() - startedAt}",
         )
     }
+
+    val imageBitmap = remember(bitmap) { bitmap?.asImageBitmap() }
+    val showExif by remember { derivedStateOf { scale() <= 1.05f } }
 
     Box(
         modifier = modifier
@@ -77,35 +108,45 @@ fun PhotoCardView(
             .background(DarkSurfaceVariant)
             .border(1.dp, BorderColor, RoundedCornerShape(20.dp)),
     ) {
-        if (isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = PrimaryNeon, modifier = Modifier.size(40.dp))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = if (photoItem.isRawFile()) "LibRaw 現像中..." else "画像をロード中...",
-                        color = TextSecondary,
-                        fontSize = 13.sp,
-                    )
-                }
-            }
-        } else if (bitmap != null) {
+        if (imageBitmap != null) {
             Image(
-                bitmap = bitmap!!.asImageBitmap(),
+                bitmap = imageBitmap,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = panX
-                        translationY = panY
+                        val zoom = scale()
+                        scaleX = zoom
+                        scaleY = zoom
+                        translationX = panX()
+                        translationY = panY()
                     },
             )
+        } else if (isLoading) {
+            if (placeholder != null) {
+                Image(
+                    bitmap = remember(placeholder) { placeholder.asImageBitmap() },
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = PrimaryNeon, modifier = Modifier.size(40.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = if (photoItem.isRawFile()) "LibRaw 現像中..." else "画像をロード中...",
+                            color = TextSecondary,
+                            fontSize = 13.sp,
+                        )
+                    }
+                }
+            }
         } else {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -129,7 +170,7 @@ fun PhotoCardView(
         }
 
         // Bottom EXIF Info Overlay
-        if (showExifOverlay && photoItem.exifInfo.make.isNotEmpty() && scale <= 1.05f) {
+        if (showExifOverlay && photoItem.exifInfo.make.isNotEmpty() && showExif) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

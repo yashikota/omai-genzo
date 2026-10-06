@@ -15,7 +15,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
@@ -29,15 +28,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yashikota.omaigenzo.DecodePriority
 import com.yashikota.omaigenzo.LibRawBridge
 import com.yashikota.omaigenzo.PhotoItem
 import com.yashikota.omaigenzo.SelectionState
+import com.yashikota.omaigenzo.data.PrefetchCoordinator
 import com.yashikota.omaigenzo.ui.theme.*
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
 import java.text.DateFormat
 import java.util.Date
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,8 +66,19 @@ fun SwipeSelectionScreen(
 
     val currentPhoto = photos.getOrNull(currentIndex)
 
-    val acceptCount = photos.count { it.selectionState == SelectionState.ACCEPT }
-    val rejectCount = photos.count { it.selectionState == SelectionState.REJECT }
+    // Recomputed when the list changes (once per swipe), never per drag frame.
+    val (acceptCount, rejectCount) = remember(photos) {
+        var accepted = 0
+        var rejected = 0
+        for (photo in photos) {
+            when (photo.selectionState) {
+                SelectionState.ACCEPT -> accepted++
+                SelectionState.REJECT -> rejected++
+                SelectionState.PENDING -> Unit
+            }
+        }
+        accepted to rejected
+    }
     val totalCount = photos.size
 
     LaunchedEffect(currentIndex, photos.size) {
@@ -84,24 +95,30 @@ fun SwipeSelectionScreen(
         imagePan = Offset.Zero
     }
 
-    LaunchedEffect(currentIndex, photos) {
-        val order = intArrayOf(currentIndex + 1, currentIndex - 1, currentIndex + 2)
-        coroutineScope {
-            order.map { index ->
-                photos.getOrNull(index)?.let { photo ->
-                    async {
-                        libRawBridge.loadPhotoBitmap(
-                            context = context,
-                            filePath = photo.fastDisplayPath,
-                            isRaw = photo.shouldUseRawRenderer(),
-                            fastMode = true,
-                            targetMaxDimension = 2048,
-                            cacheVersion = photo.modifiedAt,
-                        )
-                    }
-                }
-            }.filterNotNull().awaitAll()
+    // Keyed on the index and list size only: `photos` is a new list after every selection, and
+    // restarting prefetch for that would cancel the very work the next card is waiting for.
+    val latestPhotos by rememberUpdatedState(photos)
+    val prefetch = remember(libRawBridge) { PrefetchCoordinator(Dispatchers.Default, libRawBridge.maxPrefetchEntries()) }
+    DisposableEffect(prefetch) {
+        prefetch.onPrefetchRequested = { request ->
+            latestPhotos.getOrNull(request.index)?.let { photo ->
+                libRawBridge.loadPhotoBitmap(
+                    filePath = photo.fastDisplayPath,
+                    isRaw = photo.shouldUseRawRenderer(),
+                    fastMode = true,
+                    targetMaxDimension = LibRawBridge.DEFAULT_PREVIEW_TARGET,
+                    cacheVersion = photo.modifiedAt,
+                    priority = DecodePriority.PREFETCH,
+                )
+            }
         }
+        onDispose {
+            prefetch.cancelAll()
+            prefetch.onPrefetchRequested = null
+        }
+    }
+    LaunchedEffect(currentIndex, photos.size) {
+        prefetch.updateCurrentIndex(currentIndex, photos.size)
     }
 
     Scaffold(
@@ -214,6 +231,7 @@ fun SwipeSelectionScreen(
                         PhotoCardView(
                             photoItem = nextPhoto,
                             libRawBridge = libRawBridge,
+                            priority = DecodePriority.PREFETCH,
                             modifier = Modifier
                                 .fillMaxSize(0.95f)
                                 .graphicsLayer {
@@ -224,14 +242,12 @@ fun SwipeSelectionScreen(
                         )
                     }
 
-                    val rotationZ = if (zoomScale <= 1.05f) (offsetX / 25f).coerceIn(-15f, 15f) else 0f
-
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
                             .graphicsLayer {
-                                this.rotationZ = rotationZ
+                                rotationZ = if (zoomScale <= 1.05f) (offsetX / 25f).coerceIn(-15f, 15f) else 0f
                             }
                             .pointerInput(currentPhoto.id) {
                                 detectTransformGestures { _, pan, zoom, _ ->
@@ -273,85 +289,67 @@ fun SwipeSelectionScreen(
                         PhotoCardView(
                             photoItem = currentPhoto,
                             libRawBridge = libRawBridge,
-                            scale = zoomScale,
-                            panX = imagePan.x,
-                            panY = imagePan.y,
+                            scale = { zoomScale },
+                            panX = { imagePan.x },
+                            panY = { imagePan.y },
                         )
 
-                        // Overlay Indicators
-                        if (offsetX > 40f && zoomScale <= 1.05f) {
-                            val alphaValue = (offsetX / thresholdX).coerceIn(0f, 1f)
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(28.dp)
-                                    .rotate(-10f)
-                                    .alpha(alphaValue),
-                            ) {
-                                Text(
-                                    text = "キープ",
-                                    color = AcceptGreen,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 32.sp,
-                                    letterSpacing = 2.sp,
-                                )
-                            }
-                        }
-
-                        if (offsetX < -40f && zoomScale <= 1.05f) {
-                            val alphaValue = (-offsetX / thresholdX).coerceIn(0f, 1f)
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(28.dp)
-                                    .rotate(10f)
-                                    .alpha(alphaValue),
-                            ) {
-                                Text(
-                                    text = "破棄",
-                                    color = RejectRed,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 32.sp,
-                                    letterSpacing = 2.sp,
-                                )
-                            }
-                        }
-
-                        if (offsetY < -40f && zoomScale <= 1.05f && kotlin.math.abs(offsetY) > kotlin.math.abs(offsetX)) {
-                            val alphaValue = (-offsetY / thresholdY).coerceIn(0f, 1f)
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .padding(bottom = 60.dp)
-                                    .alpha(alphaValue),
-                            ) {
-                                Text(
-                                    text = "戻る",
-                                    color = UndoPurple,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 24.sp,
-                                    letterSpacing = 2.sp,
-                                )
-                            }
-                        }
-
-                        if (offsetY > 40f && zoomScale <= 1.05f && kotlin.math.abs(offsetY) > kotlin.math.abs(offsetX)) {
-                            val alphaValue = (offsetY / thresholdY).coerceIn(0f, 1f)
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .padding(top = 60.dp)
-                                    .alpha(alphaValue),
-                            ) {
-                                Text(
-                                    text = "保留",
-                                    color = SkipYellow,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 24.sp,
-                                    letterSpacing = 2.sp,
-                                )
-                            }
-                        }
+                        // Overlay indicators stay composed and only change alpha inside graphicsLayer,
+                        // so dragging does not recompose the screen.
+                        SwipeLabel(
+                            text = "キープ",
+                            color = AcceptGreen,
+                            fontSize = 32.sp,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(28.dp)
+                                .rotate(-10f),
+                            alpha = {
+                                if (offsetX > 40f && zoomScale <= 1.05f) (offsetX / thresholdX).coerceIn(0f, 1f) else 0f
+                            },
+                        )
+                        SwipeLabel(
+                            text = "破棄",
+                            color = RejectRed,
+                            fontSize = 32.sp,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(28.dp)
+                                .rotate(10f),
+                            alpha = {
+                                if (offsetX < -40f && zoomScale <= 1.05f) (-offsetX / thresholdX).coerceIn(0f, 1f) else 0f
+                            },
+                        )
+                        SwipeLabel(
+                            text = "戻る",
+                            color = UndoPurple,
+                            fontSize = 24.sp,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 60.dp),
+                            alpha = {
+                                if (offsetY < -40f && zoomScale <= 1.05f && abs(offsetY) > abs(offsetX)) {
+                                    (-offsetY / thresholdY).coerceIn(0f, 1f)
+                                } else {
+                                    0f
+                                }
+                            },
+                        )
+                        SwipeLabel(
+                            text = "保留",
+                            color = SkipYellow,
+                            fontSize = 24.sp,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 60.dp),
+                            alpha = {
+                                if (offsetY > 40f && zoomScale <= 1.05f && abs(offsetY) > abs(offsetX)) {
+                                    (offsetY / thresholdY).coerceIn(0f, 1f)
+                                } else {
+                                    0f
+                                }
+                            },
+                        )
                     }
 
                     Column(
@@ -447,4 +445,22 @@ fun SwipeSelectionScreen(
             }
         }
     }
+}
+
+@Composable
+private fun SwipeLabel(
+    text: String,
+    color: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier,
+    alpha: () -> Float,
+) {
+    Text(
+        text = text,
+        color = color,
+        fontWeight = FontWeight.Black,
+        fontSize = fontSize,
+        letterSpacing = 2.sp,
+        modifier = modifier.graphicsLayer { this.alpha = alpha() },
+    )
 }

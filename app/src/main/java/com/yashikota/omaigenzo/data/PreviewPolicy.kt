@@ -56,8 +56,8 @@ class BucketedCache<V : Any>(
     fun sizeBytes(bucket: PreviewBucket): Long = bucket(bucket).sizeBytes
 }
 
-/** A JPEG stored inside a RAW container: where it is and how big it claims to be. */
-data class EmbeddedJpeg(val offset: Long, val length: Long, val width: Int, val height: Int) {
+/** A JPEG stored inside a RAW container: its address in the mapped file and its probed pixel size. */
+data class EmbeddedJpeg(val address: Long, val length: Long, val width: Int, val height: Int) {
     val maxDimension: Int get() = maxOf(width, height)
 }
 

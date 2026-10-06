@@ -1,6 +1,5 @@
 package com.yashikota.omaigenzo.ui
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -235,12 +234,20 @@ private fun GalleryItemCard(
     libRawBridge: LibRawBridge,
     onClick: () -> Unit,
 ) {
-    val context = LocalContext.current
-    var thumbnail by remember(photoItem.id) { mutableStateOf<Bitmap?>(null) }
+    var thumbnail by remember(photoItem.id, photoItem.modifiedAt) {
+        mutableStateOf(
+            libRawBridge.peekCached(
+                filePath = photoItem.fastDisplayPath,
+                isRaw = photoItem.shouldUseRawRenderer(),
+                targetMaxDimension = 512,
+                cacheVersion = photoItem.modifiedAt,
+            ),
+        )
+    }
 
-    LaunchedEffect(photoItem.id) {
+    LaunchedEffect(photoItem.id, photoItem.modifiedAt) {
+        if (thumbnail != null) return@LaunchedEffect
         thumbnail = libRawBridge.loadPhotoBitmap(
-            context = context,
             filePath = photoItem.fastDisplayPath,
             isRaw = photoItem.shouldUseRawRenderer(),
             fastMode = true,
@@ -265,9 +272,10 @@ private fun GalleryItemCard(
             )
             .clickable { onClick() },
     ) {
-        if (thumbnail != null) {
+        val shown = thumbnail
+        if (shown != null) {
             Image(
-                bitmap = thumbnail!!.asImageBitmap(),
+                bitmap = remember(shown) { shown.asImageBitmap() },
                 contentDescription = photoItem.displayFileName,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

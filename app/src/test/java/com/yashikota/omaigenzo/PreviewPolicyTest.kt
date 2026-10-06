@@ -86,7 +86,7 @@ class PreviewPolicyTest {
 
     // --- embedded RAW JPEG choice -----------------------------------------------------------------
 
-    private fun jpeg(w: Int, h: Int) = EmbeddedJpeg(offset = 1_000L, length = (w * h / 8).toLong(), width = w, height = h)
+    private fun jpeg(w: Int, h: Int) = EmbeddedJpeg(address = 1_000L, length = (w * h / 8).toLong(), width = w, height = h)
 
     @Test
     fun picksTheSmallestEmbeddedJpegThatCoversTheTarget() {
@@ -117,7 +117,7 @@ class PreviewPolicyTest {
 
     @Test
     fun ignoresDegenerateEntries() {
-        val broken = EmbeddedJpeg(offset = 0, length = 0, width = 4_000, height = 3_000)
+        val broken = EmbeddedJpeg(address = 0, length = 0, width = 4_000, height = 3_000)
         assertNull(EmbeddedPreviewPolicy.choose(listOf(broken), 512))
     }
 }
