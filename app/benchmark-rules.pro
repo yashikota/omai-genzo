@@ -13,3 +13,9 @@
 
 # androidx.test references annotations that are not on the runtime classpath.
 -dontwarn com.google.errorprone.annotations.**
+
+# AndroidJUnitRunner runs inside the app process and needs these from the app's own classpath. R8
+# strips them from the minified app because nothing in the app references them, which crashed the
+# process on start (NoClassDefFoundError: androidx.tracing.Trace) and left `am instrument` silent.
+-keep class androidx.tracing.** { *; }
+-keep class androidx.test.** { *; }

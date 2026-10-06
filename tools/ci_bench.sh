@@ -23,15 +23,37 @@ adb push "$FIXTURES/." "$REMOTE/bench/"
 trap 'adb logcat -d > "$OUT/logcat.txt" 2>&1 || true' EXIT
 adb logcat -c
 
+# A process that dies on start (for example an R8-stripped class) leaves `am instrument` silent until
+# the timeout, so watch the device log and fail within seconds, printing the crash itself.
+watch_for_crash() {
+  local app_pid=$1
+  while kill -0 "$app_pid" 2>/dev/null; do
+    if adb logcat -d -b crash 2>/dev/null | grep -q "Process: $PKG"; then
+      echo "::error title=Benchmark::the app process crashed on start"
+      adb logcat -d -b crash | grep -A25 "Process: $PKG" | head -60
+      pkill -P "$app_pid" 2>/dev/null || true
+      kill "$app_pid" 2>/dev/null || true
+      return 0
+    fi
+    sleep 3
+  done
+}
+
 # One instrumentation pass. $1 = hardware true|false. Returns non-zero if it failed, hung or was skipped.
 run_pass() {
   local hardware=$1 log="$OUT/instrument-hardware-$1.txt"
   # -r streams per-test results as they happen, and timeout bounds the pass.
+  adb logcat -c
   timeout "${PASS_TIMEOUT:-12m}" adb shell am instrument -w -r \
     -e class com.yashikota.omaigenzo.PreviewDecodeBenchmark \
     -e thinkMs "$THINK_MS" -e rounds "$ROUNDS" -e hardware "$hardware" \
-    "$PKG.test/androidx.test.runner.AndroidJUnitRunner" | tee "$log" \
-    || echo "::warning title=Benchmark::hardware=$hardware instrumentation exited abnormally (timeout or crash)"
+    "$PKG.test/androidx.test.runner.AndroidJUnitRunner" > "$log" 2>&1 &
+  local instrument_pid=$!
+  watch_for_crash "$instrument_pid" &
+  local watcher_pid=$!
+  wait "$instrument_pid" || echo "::warning title=Benchmark::hardware=$hardware instrumentation exited abnormally (timeout, crash or killed)"
+  kill "$watcher_pid" 2>/dev/null || true
+  cat "$log"
 
   # `am instrument` exits 0 even when tests fail, so read the raw status codes:
   # 0 = passed, -1 = error, -2 = failure, -3 = ignored, -4 = assumption failed (e.g. no photos found).
