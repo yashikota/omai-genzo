@@ -13,6 +13,7 @@
 #include "ColorScience.h"
 #include "JpegProbe.h"
 #include "RawFileView.h"
+#include "RgbPack.h"
 
 using namespace omaigenzo;
 
@@ -267,6 +268,57 @@ static void testInvalidAndEmptyFdsAreRejected() {
     unlink(path.c_str());
 }
 
+static void testSampleFactorMatchesKotlinPreviewSizing() {
+    CHECK(sampleFactor(2817, 1876, 2048) == 2);  // half-size 21 MP RAW -> full-screen preview
+    CHECK(sampleFactor(2817, 1876, 512) == 8);   // the same RAW as a gallery thumbnail
+    CHECK(sampleFactor(2048, 1536, 2048) == 1);  // already fits
+    CHECK(sampleFactor(1876, 2817, 2048) == 2);  // portrait uses the long edge too
+    CHECK(sampleFactor(4000, 3000, 0) == 1);     // 0 = full development, never scaled
+    CHECK(sampleFactor(0, 0, 2048) == 1);
+}
+
+static void testPackKeepsChannelOrderForAndroidArgb() {
+    const uint8_t rgb[] = {10, 20, 30, 40, 50, 60};
+    uint32_t out[2] = {};
+    packRgbToArgb(rgb, 2, 1, 1, reinterpret_cast<uint8_t *>(out), sizeof(out));
+    CHECK(out[0] == 0xFF1E140Au);  // A=FF, B=30, G=20, R=10 in a little-endian word
+    CHECK(out[1] == 0xFF3C3228u);
+}
+
+static void testPackAveragesBlocksAndDropsPartialEdges() {
+    // 5x3 RGB, factor 2 -> 2x1 output; the fifth column and the third row do not fill a block.
+    std::vector<uint8_t> rgb(5 * 3 * 3, 0);
+    auto px = [&](int x, int y) { return &rgb[(static_cast<size_t>(y) * 5 + x) * 3]; };
+    const uint8_t block[4] = {0, 100, 200, 255};
+    for (int i = 0; i < 4; i++) {
+        uint8_t *p = px(i % 2, i / 2);
+        p[0] = block[i];
+        p[1] = 40;
+        p[2] = 255;
+    }
+    for (int y = 0; y < 2; y++)
+        for (int x = 2; x < 4; x++) px(x, y)[0] = 8;
+    px(4, 0)[0] = 255;  // dropped edge column
+    px(0, 2)[0] = 255;  // dropped edge row
+    uint32_t out[3] = {0, 0, 0xDEADBEEFu};
+    packRgbToArgb(rgb.data(), 5, 3, 2, reinterpret_cast<uint8_t *>(out), 2 * sizeof(uint32_t));
+    CHECK((out[0] & 0xFF) == 139);           // (0 + 100 + 200 + 255) / 4, rounded
+    CHECK(((out[0] >> 8) & 0xFF) == 40);
+    CHECK(((out[0] >> 16) & 0xFF) == 255);
+    CHECK((out[0] >> 24) == 0xFF);
+    CHECK((out[1] & 0xFF) == 8);
+    CHECK(out[2] == 0xDEADBEEFu);            // never writes past the output row
+}
+
+static void testPackHonoursTheBitmapStride() {
+    const uint8_t rgb[] = {1, 2, 3, 4, 5, 6};  // 1x2
+    uint32_t out[4] = {0, 0xAAAAAAAAu, 0, 0xAAAAAAAAu};
+    packRgbToArgb(rgb, 1, 2, 1, reinterpret_cast<uint8_t *>(out), 2 * sizeof(uint32_t));
+    CHECK(out[0] == 0xFF030201u);
+    CHECK(out[1] == 0xAAAAAAAAu);  // row padding untouched
+    CHECK(out[2] == 0xFF060504u);
+}
+
 static void testSequentialAccessIsMappedToo() {
     std::vector<uint8_t> bytes(4096 * 3 + 17, 0x5A);
     std::string path = writeTemp(bytes);
@@ -389,6 +441,10 @@ static void testRawMetadataDefaultsAreNeutral() {
 }
 
 int main() {
+    testSampleFactorMatchesKotlinPreviewSizing();
+    testPackKeepsChannelOrderForAndroidArgb();
+    testPackAveragesBlocksAndDropsPartialEdges();
+    testPackHonoursTheBitmapStride();
     testProbeReadsRealDimensions();
     testProbeSkipsNestedExifThumbnail();
     testProbeAcceptsProgressiveSof2();

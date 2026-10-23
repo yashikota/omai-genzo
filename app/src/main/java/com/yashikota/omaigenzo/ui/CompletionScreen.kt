@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import com.yashikota.omaigenzo.PhotoItem
 import com.yashikota.omaigenzo.R
 import com.yashikota.omaigenzo.SelectionState
+import com.yashikota.omaigenzo.SessionSummary
 import com.yashikota.omaigenzo.ui.components.ButtonContent
 import com.yashikota.omaigenzo.ui.components.SectionLabel
 import com.yashikota.omaigenzo.ui.components.label
@@ -82,10 +83,11 @@ fun CompletionScreen(
     onResumePending: () -> Unit = {},
     isExporting: Boolean = false,
 ) {
-    val totalCount = photos.size
-    val acceptCount = photos.count { it.selectionState == SelectionState.ACCEPT }
-    val rejectCount = photos.count { it.selectionState == SelectionState.REJECT }
-    val pendingCount = photos.count { it.selectionState == SelectionState.PENDING }
+    val summary = remember(photos) { SessionSummary.of(photos) }
+    val totalCount = summary.totalCount
+    val acceptCount = summary.acceptCount
+    val rejectCount = summary.rejectCount
+    val pendingCount = summary.pendingCount
     val complete = pendingCount == 0
     var confirmReset by rememberSaveable { mutableStateOf(false) }
 

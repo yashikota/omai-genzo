@@ -62,8 +62,12 @@ object PerfLogger {
         val suffix = if (fields.isEmpty()) "" else ",$fields"
         val line = "{\"wall_ms\":${System.currentTimeMillis()},\"elapsed_ns\":${SystemClock.elapsedRealtimeNanos()}," +
             "\"thread\":\"${escape(Thread.currentThread().name)}\",\"event\":\"${escape(name)}\"$suffix}"
-        Log.d(TAG, line)
-        if (!queue.offer(line)) dropped.incrementAndGet()
+        // Logcat is written by the writer thread: a Log.d here was a logd socket write on the caller,
+        // which is usually the UI thread (cache hits are logged while composing).
+        if (!queue.offer(line)) {
+            dropped.incrementAndGet()
+            Log.d(TAG, line)
+        }
     }
 
     fun path(): String = outputFile?.absolutePath.orEmpty()
@@ -82,7 +86,7 @@ object PerfLogger {
     }
 
     private fun writerLoop() {
-        val logWriter = PerfLogWriter({ outputFile }, queue, MAX_LOG_BYTES)
+        val logWriter = PerfLogWriter({ outputFile }, queue, MAX_LOG_BYTES) { Log.d(TAG, it) }
         while (true) {
             logWriter.writeNextBatch()
             failures = logWriter.failures.get()

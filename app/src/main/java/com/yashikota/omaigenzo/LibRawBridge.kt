@@ -25,7 +25,6 @@ import com.yashikota.omaigenzo.data.SuspendSingleFlight
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.nio.ByteBuffer
@@ -117,7 +116,9 @@ class LibRawBridge(context: Context) {
     private external fun openEmbeddedPreviews(fd: Int): LongArray?
     private external fun wrapDirect(address: Long, length: Long): ByteBuffer?
     private external fun closeView(handle: Long)
-    private external fun decodeRawFromFd(fd: Int, halfSize: Boolean): Bitmap?
+
+    /** [maxDimension] > 0 averages the developed image down to that long edge; 0 keeps every pixel. */
+    private external fun decodeRawFromFd(fd: Int, halfSize: Boolean, maxDimension: Int): Bitmap?
 
     fun parseExif(filePath: String): ExifInfo {
         val jsonStr = getMetadata(filePath)
@@ -188,10 +189,12 @@ class LibRawBridge(context: Context) {
         val bucket = PreviewBucket.forTarget(targetMaxDimension)
         val key = cacheKey(filePath, isRaw, fastMode, targetMaxDimension, cacheVersion)
         val cache = caches(appContext)
-        return singleFlight.run(key, cached = { cache[bucket, key] }) {
+        val dispatcher = if (priority == DecodePriority.PREFETCH) prefetchDispatcher else visibleDispatcher
+        // The flight itself starts on the decode dispatcher: hopping from the flight's own scope to
+        // it cost one extra thread handoff before every cold decode.
+        return singleFlight.run(key, cached = { cache[bucket, key] }, context = dispatcher) {
             val startedAt = System.nanoTime()
-            val dispatcher = if (priority == DecodePriority.PREFETCH) prefetchDispatcher else visibleDispatcher
-            withContext(dispatcher) { decodePhoto(filePath, isRaw, fastMode, targetMaxDimension) }.also { decoded ->
+            decodePhoto(filePath, isRaw, fastMode, targetMaxDimension).also { decoded ->
                 val elapsed = System.nanoTime() - startedAt
                 PreviewMetrics.recordDecode(elapsed)
                 PerfLogger.event(
@@ -259,12 +262,12 @@ class LibRawBridge(context: Context) {
             }
         }
         PerfLogger.event("preview_decode_path", "\"path\":\"half_raw_fallback\",\"source\":\"${PerfLogger.escape(source)}\"")
-        return decodeRawFromFd(fd, true)
+        return decodeRawFromFd(fd, true, target)
     }
 
     private fun decodeRawFull(fd: Int, source: String): Bitmap? {
         PerfLogger.event("preview_decode_path", "\"path\":\"full_raw\",\"source\":\"${PerfLogger.escape(source)}\"")
-        return decodeRawFromFd(fd, false)
+        return decodeRawFromFd(fd, false, 0)
     }
 
     private fun decodeJpegBuffer(buffer: ByteBuffer, target: Int): Bitmap? {

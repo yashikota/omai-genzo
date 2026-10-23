@@ -39,10 +39,12 @@ class LocalPhotoRepositoryTest {
     private companion object {
         const val AUTHORITY = "com.yashikota.omaigenzo.test.documents"
         const val PREFS = "selection_session"
+        const val SNAPSHOT_PREFS = "selection_snapshot"
     }
 
     private lateinit var context: Context
     private val prefs get() = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val snapshotPrefs get() = context.getSharedPreferences(SNAPSHOT_PREFS, Context.MODE_PRIVATE)
     private val treeUri: Uri = DocumentsContract.buildTreeDocumentUri(AUTHORITY, "root")
 
     @Before
@@ -56,6 +58,7 @@ class LocalPhotoRepositoryTest {
     @After
     fun tearDown() {
         prefs.edit(commit = true) { clear() }
+        snapshotPrefs.edit(commit = true) { clear() }
     }
 
     // --- helpers ---------------------------------------------------------------------------------
@@ -183,7 +186,7 @@ class LocalPhotoRepositoryTest {
 
         assertEquals(listOf(SelectionState.PENDING, SelectionState.ACCEPT), repository.states())
         repository.awaitPersisted()
-        assertEquals("PA", prefs.getString("selection", null))
+        assertEquals("PA", snapshotPrefs.getString("selection", null))
         assertEquals(listOf(SelectionState.PENDING, SelectionState.ACCEPT), LocalPhotoRepository(context).states())
     }
 
@@ -195,7 +198,46 @@ class LocalPhotoRepositoryTest {
         repeat(20) { repository.updateSelection("p$it", if (it % 2 == 0) SelectionState.ACCEPT else SelectionState.REJECT) }
         repository.awaitPersisted()
 
-        assertEquals("AR".repeat(10), prefs.getString("selection", null))
+        assertEquals("AR".repeat(10), snapshotPrefs.getString("selection", null))
+    }
+
+    @Test
+    fun aSwipeWritesOnlyTheSnapshotFileNeverThePhotoList() = runBlocking {
+        FakeDocumentsProvider.rows = listOf(row("1", "A.JPG"), row("2", "B.JPG"))
+        val repository = LocalPhotoRepository(context)
+        repository.importSession(treeUri)
+        val photosJson = prefs.getString("photos", null)
+
+        repository.updateSelection(repository.photos.value[1].id, SelectionState.ACCEPT)
+        repository.awaitPersisted()
+
+        assertEquals("PA", snapshotPrefs.getString("selection", null))
+        assertEquals(photosJson, prefs.getString("photos", null))
+        assertNull("the per-swipe snapshot must not live next to the photo list", prefs.getString("selection", null))
+    }
+
+    @Test
+    fun aSessionSavedBeforeTheSnapshotFileMovesOverOnItsFirstSwipe() {
+        seed(photoJson("a"), photoJson("b"), selection = "AP")
+        val repository = LocalPhotoRepository(context)
+        assertEquals(listOf(SelectionState.ACCEPT, SelectionState.PENDING), repository.states())
+
+        repository.updateSelection("b", SelectionState.REJECT)
+        repository.awaitPersisted()
+
+        assertEquals(listOf(SelectionState.ACCEPT, SelectionState.REJECT), LocalPhotoRepository(context).states())
+    }
+
+    @Test
+    fun aSnapshotWrittenForAnotherPhotoListIsIgnored() {
+        seed(photoJson("a"), selection = "A")
+        prefs.edit(commit = true) { putLong("session_token", 2L) }
+        snapshotPrefs.edit(commit = true) {
+            putLong("session_token", 1L)
+            putString("selection", "R")
+        }
+
+        assertEquals(listOf(SelectionState.ACCEPT), LocalPhotoRepository(context).states())
     }
 
     @Test
@@ -221,7 +263,7 @@ class LocalPhotoRepositoryTest {
 
         assertEquals(listOf(SelectionState.PENDING), repository.states())
         repository.awaitPersisted()
-        assertEquals("P", prefs.getString("selection", null))
+        assertEquals("P", snapshotPrefs.getString("selection", null))
         assertFalse(repository.undoLastSelection())
     }
 
@@ -259,6 +301,7 @@ class LocalPhotoRepositoryTest {
 
         assertTrue(repository.photos.value.isEmpty())
         assertTrue(prefs.all.isEmpty())
+        assertTrue(snapshotPrefs.all.isEmpty())
         assertTrue(LocalPhotoRepository(context).photos.value.isEmpty())
     }
 
@@ -271,7 +314,7 @@ class LocalPhotoRepositoryTest {
         repository.clearSession()
         repository.awaitPersisted()
 
-        assertNull(prefs.getString("selection", null))
+        assertNull(snapshotPrefs.getString("selection", null))
         assertNull(prefs.getString("photos", null))
     }
 
@@ -312,7 +355,7 @@ class LocalPhotoRepositoryTest {
         val restored = LocalPhotoRepository(context).photos.value
 
         assertEquals(first.photos.value, restored)
-        assertEquals("PP", prefs.getString("selection", null))
+        assertEquals("PP", snapshotPrefs.getString("selection", null))
     }
 
     @Test
@@ -328,7 +371,7 @@ class LocalPhotoRepositoryTest {
         assertEquals(SelectionState.PENDING, repository.photos.value.single().selectionState)
         assertFalse(repository.undoLastSelection())
         repository.awaitPersisted()
-        assertEquals("a stale swipe snapshot must not overwrite the new session", "P", prefs.getString("selection", null))
+        assertEquals("a stale swipe snapshot must not overwrite the new session", "P", snapshotPrefs.getString("selection", null))
     }
 
     @Test

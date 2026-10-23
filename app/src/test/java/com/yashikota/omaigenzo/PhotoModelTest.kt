@@ -88,4 +88,15 @@ class PhotoModelTest {
         assertEquals(70, summary.acceptPercentage)
         assertEquals(30, summary.rejectPercentage)
     }
+
+    @Test
+    fun sessionSummaryCountsEveryStateInOnePass() {
+        val states = listOf(SelectionState.ACCEPT, SelectionState.REJECT, SelectionState.PENDING, SelectionState.ACCEPT)
+        val photos = states.mapIndexed { i, state -> PhotoItem(id = "p$i", baseName = "p$i", selectionState = state) }
+
+        val summary = SessionSummary.of(photos)
+
+        assertEquals(SessionSummary(totalCount = 4, acceptCount = 2, rejectCount = 1, pendingCount = 1), summary)
+        assertEquals(SessionSummary(0, 0, 0, 0), SessionSummary.of(emptyList()))
+    }
 }
