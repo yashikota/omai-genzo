@@ -106,4 +106,16 @@ class SelectionPersistenceTest {
         executor.shutdown()
         assertEquals(listOf("first", "second"), written)
     }
+
+    @Test
+    fun snapshotIsOnlyRestoredForThePhotoListItWasWrittenFor() {
+        // Current format: the snapshot file belongs to this session.
+        assertEquals("AR", SelectionCodec.pickSnapshot(42L, 42L, "AR", legacySnapshot = null))
+        // A crash between writing the photo list and the snapshot must not apply another session's states.
+        assertNull(SelectionCodec.pickSnapshot(43L, 42L, "AR", legacySnapshot = null))
+        // Sessions saved before the split read the snapshot stored next to the photos...
+        assertEquals("PP", SelectionCodec.pickSnapshot(0L, 0L, snapshot = null, legacySnapshot = "PP"))
+        // ...until the first swipe writes the snapshot file, which then wins.
+        assertEquals("AP", SelectionCodec.pickSnapshot(0L, 0L, snapshot = "AP", legacySnapshot = "PP"))
+    }
 }
