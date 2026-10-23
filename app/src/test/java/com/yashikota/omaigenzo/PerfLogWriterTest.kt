@@ -71,4 +71,56 @@ class PerfLogWriterTest {
         assertEquals(listOf("fresh"), file.readLines())
         assertEquals("x".repeat(100), File(folder.root, "omai-perf.1.jsonl").readText())
     }
+
+    @Test
+    fun everyLineIsEchoedInOrderEvenWhenTheFileCannotBeWritten() {
+        val blocker = folder.newFile("blocker")
+        val echoed = mutableListOf<String>()
+        val writer = PerfLogWriter({ File(blocker, "omai-perf.jsonl") }, queueOf("a", "b"), maxBytes = 1_000_000) { echoed += it }
+
+        writer.writeNextBatch()
+
+        assertEquals(listOf("a", "b"), echoed)
+    }
+
+    @Test
+    fun aLogThatGrowsWhileOpenIsStillRotated() {
+        val file = File(folder.root, "omai-perf.jsonl")
+        val queue = ArrayBlockingQueue<String>(16)
+        val writer = PerfLogWriter({ file }, queue, maxBytes = 10)
+
+        queue.add("0123456789") // 11 bytes with the newline: the next batch must rotate first
+        writer.writeNextBatch()
+        queue.add("next")
+        writer.writeNextBatch()
+        writer.close()
+
+        assertEquals(listOf("next"), file.readLines())
+        assertEquals(listOf("0123456789"), File(folder.root, "omai-perf.1.jsonl").readLines())
+    }
+
+    @Test
+    fun aSingleEventBatchCostsMicrosecondsNotAFileOpen() {
+        val file = File(folder.root, "perf/omai-perf.jsonl")
+        val queue = ArrayBlockingQueue<String>(16)
+        val writer = PerfLogWriter({ file }, queue, maxBytes = 64L shl 20)
+        val line = "{\"event\":\"preview_cache_hit\",\"source\":\"content://provider/document/IMG_0001.CR2\"}"
+        repeat(1_000) {
+            queue.add(line)
+            writer.writeNextBatch()
+        }
+
+        val iterations = 10_000
+        val startedAt = System.nanoTime()
+        repeat(iterations) {
+            queue.add(line)
+            writer.writeNextBatch()
+        }
+        val micros = (System.nanoTime() - startedAt) / 1_000.0 / iterations
+        writer.close()
+
+        assertEquals(11_000, file.readLines().size)
+        // Reopening the file per batch measured ~29us here; keeping it open is a single write().
+        assertTrue("batch took ${micros}us", micros < 20.0)
+    }
 }

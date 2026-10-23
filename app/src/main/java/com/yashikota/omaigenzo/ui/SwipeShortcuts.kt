@@ -7,6 +7,7 @@ import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.View
 import com.yashikota.omaigenzo.PhotoItem
+import com.yashikota.omaigenzo.R
 import com.yashikota.omaigenzo.data.SelectionShareText
 
 /** What a hardware key does on the swipe screen. */
@@ -61,8 +62,8 @@ fun shareKeptFileList(context: Context, photos: List<PhotoItem>) {
     if (text.isEmpty()) return
     val send = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, "キープした写真の一覧")
+        putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.share_subject))
         putExtra(Intent.EXTRA_TEXT, text)
     }
-    context.startActivity(Intent.createChooser(send, "キープ一覧を共有"))
+    context.startActivity(Intent.createChooser(send, context.getString(R.string.share_kept)))
 }

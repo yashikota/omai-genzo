@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -34,6 +35,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yashikota.omaigenzo.PhotoItem
+import com.yashikota.omaigenzo.R
 
 /** Warm gold that reads on both the dark photo scrim and light surfaces. */
 val RatingGold = Color(0xFFFFC53D)
@@ -51,17 +53,18 @@ fun RatingBar(
     inactiveColor: Color = Color.White.copy(alpha = 0.45f),
 ) {
     val haptics = LocalHapticFeedback.current
+    val ratingDescription = if (rating > 0) stringResource(R.string.rating_value, rating) else stringResource(R.string.rating_none)
     Row(
         modifier = modifier
             .selectableGroup()
-            .semantics { contentDescription = if (rating > 0) "評価 ★$rating" else "未評価" },
+            .semantics { contentDescription = ratingDescription },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         for (star in 1..PhotoItem.MAX_RATING) {
             val filled = star <= rating
             Icon(
                 imageVector = if (filled) Icons.Filled.Star else Icons.Outlined.StarOutline,
-                contentDescription = if (star == rating) "★$star（タップで評価を外す）" else "★$star を付ける",
+                contentDescription = stringResource(if (star == rating) R.string.rating_clear else R.string.rating_set, star),
                 tint = if (filled) RatingGold else inactiveColor,
                 modifier = Modifier
                     .minimumInteractiveComponentSize()

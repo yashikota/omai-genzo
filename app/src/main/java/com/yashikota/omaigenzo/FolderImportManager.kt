@@ -2,6 +2,7 @@ package com.yashikota.omaigenzo
 
 import android.content.Context
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
@@ -12,8 +13,8 @@ import com.yashikota.omaigenzo.data.ExportPlanner
 import com.yashikota.omaigenzo.data.ExportProgress
 import com.yashikota.omaigenzo.data.ExportReport
 import com.yashikota.omaigenzo.data.ExportSource
+import com.yashikota.omaigenzo.data.FileCopy
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,9 +23,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.io.InputStream
-import java.io.OutputStream
 import java.util.UUID
 
 data class ImportProgress(
@@ -49,10 +49,6 @@ class FolderImportManager(val context: Context) {
         private const val TAG = "FolderImportManager"
         private val RAW_EXTENSIONS = setOf("arw", "cr2", "cr3", "nef", "dng", "orf", "rw2", "pef", "raf")
         private val JPG_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp")
-
-        // Large enough that a 50 MB RAW is a few hundred provider writes, small enough to check
-        // for cancellation several times a second.
-        private const val COPY_BUFFER_BYTES = 256 * 1024
     }
 
     private val _importProgress = MutableStateFlow(ImportProgress())
@@ -215,8 +211,8 @@ class FolderImportManager(val context: Context) {
 
     /**
      * Copies [entries] into [targetTreeUri]. Existing names are read with one listing up front instead
-     * of one provider lookup per file. Cancelling the calling coroutine stops between chunks and
-     * removes the half-written file, so the destination never keeps a truncated photo.
+     * of one provider lookup per file. Cancellation is checked between files; a file whose copy fails
+     * is removed, so the destination never keeps a truncated photo.
      */
     suspend fun exportToUri(
         targetTreeUri: Uri,
@@ -232,29 +228,24 @@ class FolderImportManager(val context: Context) {
         var written = 0
         var skipped = 0
         var failed = 0
-        val buffer = ByteArray(COPY_BUFFER_BYTES)
 
         for ((index, entry) in entries.withIndex()) {
-            if (!isActive) return@withContext ExportReport(exportedPhotos, written, skipped, failed, cancelled = true)
             onProgress(ExportProgress(index, entries.size, entry.displayName))
             var photoDone = false
             for (file in entry.files) {
+                if (!isActive) return@withContext ExportReport(exportedPhotos, written, skipped, failed, cancelled = true)
                 val key = file.fileName.lowercase()
                 if (skipExisting && key in existing) {
                     skipped++
                     photoDone = true
                     continue
                 }
-                when (writeFile(targetDoc, file, buffer)) {
-                    WriteOutcome.WRITTEN -> {
-                        written++
-                        photoDone = true
-                        existing += key
-                    }
-                    WriteOutcome.FAILED -> failed++
-                    WriteOutcome.CANCELLED -> {
-                        return@withContext ExportReport(exportedPhotos, written, skipped, failed, cancelled = true)
-                    }
+                if (writeFile(targetDoc, file)) {
+                    written++
+                    photoDone = true
+                    existing += key
+                } else {
+                    failed++
                 }
             }
             if (photoDone) exportedPhotos++
@@ -263,43 +254,36 @@ class FolderImportManager(val context: Context) {
         ExportReport(exportedPhotos, written, skipped, failed)
     }
 
-    private enum class WriteOutcome { WRITTEN, FAILED, CANCELLED }
-
-    private suspend fun writeFile(targetDoc: DocumentFile, file: ExportFile, buffer: ByteArray): WriteOutcome {
+    private fun writeFile(targetDoc: DocumentFile, file: ExportFile): Boolean {
         val newDoc = try {
             targetDoc.createFile(file.mimeType, file.fileName)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create ${file.fileName}: ${e.message}")
             null
-        } ?: return WriteOutcome.FAILED
-        val outcome = try {
-            context.contentResolver.openOutputStream(newDoc.uri)?.use { destination ->
-                when (val source = file.source) {
-                    is ExportSource.Inline -> {
-                        destination.write(source.bytes)
-                        WriteOutcome.WRITTEN
+        } ?: return false
+        val written = try {
+            // Descriptors rather than streams, so FileCopy can hand the copy to the kernel.
+            val target = context.contentResolver.openFileDescriptor(newDoc.uri, "w")
+            target != null &&
+                ParcelFileDescriptor.AutoCloseOutputStream(target).use { destination ->
+                    when (val source = file.source) {
+                        is ExportSource.Inline -> {
+                            destination.write(source.bytes)
+                            true
+                        }
+                        is ExportSource.LocalFile -> File(source.path).takeIf(File::exists)?.let { input ->
+                            FileInputStream(input).use { FileCopy.copy(it, destination) }
+                        } != null
+                        is ExportSource.ContentUri -> context.contentResolver.openFileDescriptor(source.uriString.toUri(), "r")?.let { input ->
+                            ParcelFileDescriptor.AutoCloseInputStream(input).use { FileCopy.copy(it, destination) }
+                        } != null
                     }
-                    is ExportSource.LocalFile -> File(source.path).takeIf(File::exists)?.inputStream()
-                        ?.use { copyCancellable(it, destination, buffer) }
-                    is ExportSource.ContentUri -> context.contentResolver.openInputStream(source.uriString.toUri())
-                        ?.use { copyCancellable(it, destination, buffer) }
                 }
-            } ?: WriteOutcome.FAILED
         } catch (e: Exception) {
             Log.e(TAG, "Failed to export ${file.fileName}: ${e.message}")
-            WriteOutcome.FAILED
+            false
         }
-        if (outcome != WriteOutcome.WRITTEN) runCatching { newDoc.delete() }
-        return outcome
-    }
-
-    private suspend fun copyCancellable(input: InputStream, output: OutputStream, buffer: ByteArray): WriteOutcome {
-        val coroutineContext = currentCoroutineContext()
-        while (true) {
-            if (!coroutineContext.isActive) return WriteOutcome.CANCELLED
-            val read = input.read(buffer)
-            if (read < 0) return WriteOutcome.WRITTEN
-            output.write(buffer, 0, read)
-        }
+        if (!written) runCatching { newDoc.delete() }
+        return written
     }
 }

@@ -27,10 +27,20 @@ class LocalPhotoRepository(
         const val KEY_PHOTOS = "photos"
         const val KEY_SELECTION = "selection"
         const val KEY_RATING = "rating"
+        const val KEY_SESSION_TOKEN = "session_token"
         const val MAX_UNDO_DEPTH = 1_024
     }
 
     private val preferences = context.getSharedPreferences("selection_session", Context.MODE_PRIVATE)
+
+    // The per-swipe snapshot has a file of its own. SharedPreferences rewrites its whole file on
+    // every apply(), so sharing one with the photo list made each swipe rewrite ~0.8 KB per photo
+    // (about 8 MB for a 10,000 photo session), and Activity.onStop waited for that write on the UI
+    // thread. The token ties a snapshot to the photo list it describes, since the two files are no
+    // longer written atomically together.
+    private val selectionPreferences = context.getSharedPreferences("selection_snapshot", Context.MODE_PRIVATE)
+
+    @Volatile private var sessionToken = 0L
     private val store = PhotoSelectionStore(loadPhotos(), MAX_UNDO_DEPTH)
     private val photosState = MutableStateFlow(store.photos)
     override val photos: StateFlow<List<PhotoItem>> = photosState.asStateFlow()
@@ -51,7 +61,8 @@ class LocalPhotoRepository(
             if (pending.generation == sessionGeneration) {
                 val encoded = SelectionCodec.encode(pending.photos.map { it.selectionState })
                 val ratings = RatingCodec.encode(pending.photos.map { it.rating })
-                preferences.edit {
+                selectionPreferences.edit {
+                    putLong(KEY_SESSION_TOKEN, sessionToken)
                     putString(KEY_SELECTION, encoded)
                     putString(KEY_RATING, ratings)
                 }
@@ -144,6 +155,7 @@ class LocalPhotoRepository(
         synchronized(prefsLock) {
             sessionGeneration++
             preferences.edit { clear() }
+            selectionPreferences.edit { clear() }
         }
         lastChangeState.value = System.currentTimeMillis()
     }
@@ -169,8 +181,15 @@ class LocalPhotoRepository(
                 },
             )
         }
+        val token = System.currentTimeMillis()
+        sessionToken = token
         preferences.edit {
+            putLong(KEY_SESSION_TOKEN, token)
             putString(KEY_PHOTOS, array.toString())
+            remove(KEY_SELECTION)
+        }
+        selectionPreferences.edit {
+            putLong(KEY_SESSION_TOKEN, token)
             putString(KEY_SELECTION, SelectionCodec.encode(photos.map { it.selectionState }))
             putString(KEY_RATING, RatingCodec.encode(photos.map { it.rating }))
         }
@@ -196,9 +215,21 @@ class LocalPhotoRepository(
                 selectionState = SelectionState.valueOf(item.optString("selectionState", SelectionState.PENDING.name)),
             )
         }
-        // Sessions saved before the compact snapshot existed keep their per-item state.
-        val snapshot = preferences.getString(KEY_SELECTION, null)?.let { SelectionCodec.decode(it, items.size) }
-        val ratings = preferences.getString(KEY_RATING, null)?.let { RatingCodec.decode(it, items.size) }
+        sessionToken = preferences.getLong(KEY_SESSION_TOKEN, 0L)
+        val snapshotIsCurrent = selectionPreferences.getLong(KEY_SESSION_TOKEN, 0L) == sessionToken
+        // Sessions older than the compact snapshot keep their per-item state.
+        val encoded = SelectionCodec.pickSnapshot(
+            sessionToken = sessionToken,
+            snapshotToken = selectionPreferences.getLong(KEY_SESSION_TOKEN, 0L),
+            snapshot = selectionPreferences.getString(KEY_SELECTION, null),
+            legacySnapshot = preferences.getString(KEY_SELECTION, null),
+        )
+        val snapshot = encoded?.let { SelectionCodec.decode(it, items.size) }
+        val ratings = if (snapshotIsCurrent) {
+            selectionPreferences.getString(KEY_RATING, null)?.let { RatingCodec.decode(it, items.size) }
+        } else {
+            null
+        }
         if (snapshot == null && ratings == null) {
             items
         } else {

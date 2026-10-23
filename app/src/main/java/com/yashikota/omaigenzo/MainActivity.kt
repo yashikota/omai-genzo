@@ -4,15 +4,26 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -25,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,6 +66,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         PerfLogger.initialize(applicationContext)
         libRawBridge = LibRawBridge(applicationContext)
@@ -81,7 +94,7 @@ fun OmaiGenzoApp(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let { message ->
@@ -113,14 +126,16 @@ fun OmaiGenzoApp(
 
     LaunchedEffect(uiState.bulkChange) {
         val change = uiState.bulkChange ?: return@LaunchedEffect
-        val label = when (change.state) {
-            SelectionState.ACCEPT -> "キープ"
-            SelectionState.REJECT -> "破棄"
-            SelectionState.PENDING -> "保留"
-        }
+        val label = context.getString(
+            when (change.state) {
+                SelectionState.ACCEPT -> R.string.state_keep
+                SelectionState.REJECT -> R.string.state_reject
+                SelectionState.PENDING -> R.string.state_pending
+            },
+        )
         val result = snackbarHostState.showSnackbar(
-            message = "${change.count} 枚を${label}にしました",
-            actionLabel = "元に戻す",
+            message = context.getString(R.string.bulk_change_done, change.count, label),
+            actionLabel = context.getString(R.string.action_undo),
             withDismissAction = true,
             duration = SnackbarDuration.Long,
         )
@@ -140,57 +155,70 @@ fun OmaiGenzoApp(
     val openExport = { showExportSheet = true }
     val shareKept = {
         runCatching { shareKeptFileList(context, uiState.photos) }
-            .onFailure { viewModel.onAction(MainUiAction.ShowError("共有できるアプリが見つかりませんでした")) }
+            .onFailure { viewModel.onAction(MainUiAction.ShowError(context.getString(R.string.share_unavailable))) }
         Unit
     }
 
+    // System back walks up the flow instead of leaving the app mid-session.
+    BackHandler(enabled = uiState.currentScreen == ScreenState.GALLERY) {
+        viewModel.onAction(MainUiAction.NavigateTo(ScreenState.SWIPE_SELECTION))
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
-        when (uiState.currentScreen) {
-            ScreenState.FOLDER_SELECT -> {
-                FolderSelectScreen(
-                    onSelectFolderClick = { folderPickerLauncher.launch(null) },
-                    isImporting = uiState.isImporting,
-                    logPath = PerfLogger.path(),
-                )
-            }
-            ScreenState.SWIPE_SELECTION -> {
-                SwipeSelectionScreen(
-                    photos = uiState.photos,
-                    currentIndex = uiState.currentIndex,
-                    libRawBridge = libRawBridge,
-                    onSwipeAccept = { viewModel.onAction(MainUiAction.SwipeAccept(it)) },
-                    onSwipeReject = { viewModel.onAction(MainUiAction.SwipeReject(it)) },
-                    onSwipeUndo = { viewModel.onAction(MainUiAction.SwipeUndo) },
-                    onSwipeSkip = { viewModel.onAction(MainUiAction.SwipeSkip(it)) },
-                    onOpenGallery = { viewModel.onAction(MainUiAction.NavigateTo(ScreenState.GALLERY)) },
-                    onFinishSelection = { viewModel.onAction(MainUiAction.NavigateTo(ScreenState.COMPLETION)) },
-                    onRatePhoto = { photo, rating -> viewModel.onAction(MainUiAction.SetRating(photo.id, rating)) },
-                )
-            }
-            ScreenState.GALLERY -> {
-                GalleryScreen(
-                    photos = uiState.photos,
-                    libRawBridge = libRawBridge,
-                    onBackToSwipe = { viewModel.onAction(MainUiAction.NavigateTo(ScreenState.SWIPE_SELECTION)) },
-                    onSelectionChanged = { photoId, newState ->
-                        viewModel.onAction(MainUiAction.ChangePhotoSelection(photoId, newState))
-                    },
-                    onExportClick = openExport,
-                    onSelectionChangedForMany = { ids, state -> viewModel.onAction(MainUiAction.ChangeSelectionForMany(ids, state)) },
-                    onRatePhoto = { id, rating -> viewModel.onAction(MainUiAction.SetRating(id, rating)) },
-                    onStartSelectionAt = { viewModel.onAction(MainUiAction.StartSelectionAt(it)) },
-                    onShareKept = shareKept,
-                )
-            }
-            ScreenState.COMPLETION -> {
-                CompletionScreen(
-                    photos = uiState.photos,
-                    onResetClick = { viewModel.onAction(MainUiAction.ResetSession) },
-                    onResumePending = { viewModel.onAction(MainUiAction.ResumePending) },
-                    onGalleryClick = { viewModel.onAction(MainUiAction.NavigateTo(ScreenState.GALLERY)) },
-                    onExportClick = openExport,
-                    onShareKept = shareKept,
-                )
+        AnimatedContent(
+            targetState = uiState.currentScreen,
+            transitionSpec = { fadeIn(tween(durationMillis = 180)) togetherWith fadeOut(tween(durationMillis = 120)) },
+            label = "screen",
+        ) { screen ->
+            when (screen) {
+                ScreenState.FOLDER_SELECT -> {
+                    FolderSelectScreen(
+                        onSelectFolderClick = { folderPickerLauncher.launch(null) },
+                        isImporting = uiState.isImporting,
+                        logPath = PerfLogger.path(),
+                    )
+                }
+                ScreenState.SWIPE_SELECTION -> {
+                    SwipeSelectionScreen(
+                        photos = uiState.photos,
+                        currentIndex = uiState.currentIndex,
+                        libRawBridge = libRawBridge,
+                        onSwipeAccept = { viewModel.onAction(MainUiAction.SwipeAccept(it)) },
+                        onSwipeReject = { viewModel.onAction(MainUiAction.SwipeReject(it)) },
+                        onSwipeUndo = { viewModel.onAction(MainUiAction.SwipeUndo) },
+                        onSwipeSkip = { viewModel.onAction(MainUiAction.SwipeSkip(it)) },
+                        onOpenGallery = { viewModel.onAction(MainUiAction.NavigateTo(ScreenState.GALLERY)) },
+                        onFinishSelection = { viewModel.onAction(MainUiAction.NavigateTo(ScreenState.COMPLETION)) },
+                        onRatePhoto = { photo, rating -> viewModel.onAction(MainUiAction.SetRating(photo.id, rating)) },
+                    )
+                }
+                ScreenState.GALLERY -> {
+                    GalleryScreen(
+                        photos = uiState.photos,
+                        libRawBridge = libRawBridge,
+                        onBackToSwipe = { viewModel.onAction(MainUiAction.NavigateTo(ScreenState.SWIPE_SELECTION)) },
+                        onSelectionChanged = { photoId, newState ->
+                            viewModel.onAction(MainUiAction.ChangePhotoSelection(photoId, newState))
+                        },
+                        onExportClick = openExport,
+                        isExporting = uiState.isExporting,
+                        onSelectionChangedForMany = { ids, state -> viewModel.onAction(MainUiAction.ChangeSelectionForMany(ids, state)) },
+                        onRatePhoto = { id, rating -> viewModel.onAction(MainUiAction.SetRating(id, rating)) },
+                        onStartSelectionAt = { viewModel.onAction(MainUiAction.StartSelectionAt(it)) },
+                        onShareKept = shareKept,
+                    )
+                }
+                ScreenState.COMPLETION -> {
+                    CompletionScreen(
+                        photos = uiState.photos,
+                        onResetClick = { viewModel.onAction(MainUiAction.ResetSession) },
+                        onResumePending = { viewModel.onAction(MainUiAction.ResumePending) },
+                        onGalleryClick = { viewModel.onAction(MainUiAction.NavigateTo(ScreenState.GALLERY)) },
+                        onExportClick = openExport,
+                        isExporting = uiState.isExporting,
+                        onShareKept = shareKept,
+                    )
+                }
             }
         }
         if (showExportSheet) {
@@ -210,7 +238,17 @@ fun OmaiGenzoApp(
         }
         SnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 96.dp),
+        ) { data ->
+            Snackbar(
+                snackbarData = data,
+                shape = MaterialTheme.shapes.medium,
+                containerColor = MaterialTheme.colorScheme.inverseSurface,
+                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            )
+        }
     }
 }

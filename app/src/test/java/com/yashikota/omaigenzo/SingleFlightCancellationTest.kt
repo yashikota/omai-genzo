@@ -4,16 +4,19 @@ import com.yashikota.omaigenzo.data.SuspendSingleFlight
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.Executors
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SingleFlightCancellationTest {
@@ -125,5 +128,19 @@ class SingleFlightCancellationTest {
         val flight = SuspendSingleFlight<String, Int?>(this)
         val result = flight.run("k", cached = { 99 }) { error("must not run") }
         assertEquals(99, result)
+    }
+
+    @Test
+    fun theProducerStartsDirectlyOnTheRequestedDispatcher() = runBlocking {
+        val executor = Executors.newSingleThreadExecutor { Thread(it, "decode-worker") }
+        try {
+            val flight = SuspendSingleFlight<String, String?>()
+            val thread = flight.run("k", cached = { null }, context = executor.asCoroutineDispatcher()) {
+                Thread.currentThread().name
+            }
+            assertTrue("$thread", thread.orEmpty().startsWith("decode-worker"))
+        } finally {
+            executor.shutdown()
+        }
     }
 }

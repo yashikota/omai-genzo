@@ -24,6 +24,13 @@ object SelectionCodec {
         return String(chars)
     }
 
+    /**
+     * The snapshot to restore for the photo list saved with [sessionToken]. The snapshot file wins
+     * only when it was written for that same list; sessions saved before it had a file of its own
+     * (token 0) keep their [legacySnapshot] next to the photos until the first swipe moves it.
+     */
+    fun pickSnapshot(sessionToken: Long, snapshotToken: Long, snapshot: String?, legacySnapshot: String?): String? = snapshot?.takeIf { snapshotToken == sessionToken } ?: legacySnapshot
+
     /** Returns null when the snapshot does not describe exactly [expectedSize] photos. */
     fun decode(encoded: String, expectedSize: Int): Array<SelectionState>? {
         if (encoded.length != expectedSize) return null

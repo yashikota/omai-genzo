@@ -9,6 +9,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * Deduplicates concurrent work per key.
@@ -29,14 +31,15 @@ class SuspendSingleFlight<K : Any, V>(
     private val mutex = Mutex()
     private val flights = HashMap<K, Flight<V>>()
 
-    suspend fun run(key: K, cached: () -> V?, producer: suspend () -> V): V {
+    /** [context] is where [producer] runs, so it can start on its own dispatcher without a second hop. */
+    suspend fun run(key: K, cached: () -> V?, context: CoroutineContext = EmptyCoroutineContext, producer: suspend () -> V): V {
         cached()?.let { return it }
         var joined = false
         val flight = mutex.withLock {
             cached()?.let { return it }
             val existing = flights[key]
             joined = existing != null
-            val flight = existing ?: Flight(scope.async { producer() }).also { flights[key] = it }
+            val flight = existing ?: Flight(scope.async(context) { producer() }).also { flights[key] = it }
             flight.waiters++
             flight
         }

@@ -43,11 +43,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.yashikota.omaigenzo.PhotoItem
+import com.yashikota.omaigenzo.R
 import com.yashikota.omaigenzo.data.ExportContent
 import com.yashikota.omaigenzo.data.ExportOptions
 import com.yashikota.omaigenzo.data.ExportPlanner
@@ -90,13 +92,13 @@ fun ExportOptionsSheet(
                 .navigationBarsPadding(),
         ) {
             Text(
-                "キープ写真の書き出し",
+                stringResource(R.string.export_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = if (eligibleCount > 0) "$eligibleCount 枚・約 $sizeLabel" else "条件に合う写真がありません",
+                text = if (eligibleCount > 0) stringResource(R.string.export_summary, eligibleCount, sizeLabel) else stringResource(R.string.export_nothing),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (eligibleCount >
                     0
@@ -107,29 +109,29 @@ fun ExportOptionsSheet(
                 },
             )
 
-            SectionLabel("書き出すファイル")
+            SectionLabel(stringResource(R.string.export_files))
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 val choices = listOf(
-                    ExportContent.RAW_AND_JPEG to "RAW+JPEG",
-                    ExportContent.RAW_ONLY to "RAWのみ",
-                    ExportContent.JPEG_ONLY to "JPEGのみ",
+                    ExportContent.RAW_AND_JPEG to R.string.export_raw_and_jpeg,
+                    ExportContent.RAW_ONLY to R.string.export_raw_only,
+                    ExportContent.JPEG_ONLY to R.string.export_jpeg_only,
                 )
                 choices.forEachIndexed { index, (value, label) ->
                     SegmentedButton(
                         selected = content == value,
                         onClick = { content = value },
                         shape = SegmentedButtonDefaults.itemShape(index, choices.size),
-                    ) { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    ) { Text(stringResource(label), maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
             }
             Text(
-                text = "片方しかない写真は、ある方のファイルを書き出します",
+                text = stringResource(R.string.export_files_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),
             )
 
-            SectionLabel("評価で絞り込む")
+            SectionLabel(stringResource(R.string.export_min_rating))
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -138,7 +140,7 @@ fun ExportOptionsSheet(
                     FilterChip(
                         selected = minRating == stars,
                         onClick = { minRating = stars },
-                        label = { Text(if (stars == 0) "すべて" else "$stars+") },
+                        label = { Text(if (stars == 0) stringResource(R.string.export_min_rating_all) else stringResource(R.string.export_min_rating_value, stars)) },
                         leadingIcon = if (stars > 0) {
                             {
                                 Icon(
@@ -157,15 +159,15 @@ fun ExportOptionsSheet(
 
             Spacer(Modifier.height(12.dp))
             ToggleRow(
-                title = "XMPサイドカーを付ける",
-                subtitle = if (hasRaw) "RAWと同名の .xmp に評価を書き込みます（Lightroom・Capture One 対応）" else "RAW写真がないため作成されません",
+                title = stringResource(R.string.export_xmp),
+                subtitle = stringResource(if (hasRaw) R.string.export_xmp_body else R.string.export_xmp_no_raw),
                 checked = writeXmp && hasRaw && content != ExportContent.JPEG_ONLY,
                 enabled = hasRaw && content != ExportContent.JPEG_ONLY,
                 onCheckedChange = { writeXmp = it },
             )
             ToggleRow(
-                title = "同名のファイルはスキップ",
-                subtitle = "途中で止めても、同じフォルダへもう一度書き出せば続きから保存できます",
+                title = stringResource(R.string.export_skip_existing),
+                subtitle = stringResource(R.string.export_skip_existing_body),
                 checked = skipExisting,
                 onCheckedChange = { skipExisting = it },
             )
@@ -180,7 +182,7 @@ fun ExportOptionsSheet(
             ) {
                 Icon(Icons.Filled.FolderOpen, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("書き出し先を選ぶ", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.export_choose_folder), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -246,8 +248,8 @@ fun ExportProgressDialog(progress: ExportProgress, onCancel: () -> Unit) {
     AlertDialog(
         onDismissRequest = {},
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onCancel) { Text("中止") } },
-        title = { Text("書き出し中…") },
+        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.export_stop)) } },
+        title = { Text(stringResource(R.string.export_progress_title)) },
         text = {
             Column {
                 if (progress.totalPhotos > 0) {
@@ -262,9 +264,9 @@ fun ExportProgressDialog(progress: ExportProgress, onCancel: () -> Unit) {
                     text = if (progress.totalPhotos >
                         0
                     ) {
-                        "${progress.completedPhotos} / ${progress.totalPhotos} 枚"
+                        stringResource(R.string.export_progress_count, progress.completedPhotos, progress.totalPhotos)
                     } else {
-                        "準備中…"
+                        stringResource(R.string.export_progress_preparing)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                 )

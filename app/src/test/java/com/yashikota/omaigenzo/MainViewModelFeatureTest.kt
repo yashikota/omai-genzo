@@ -136,7 +136,7 @@ class MainViewModelFeatureTest {
         val state = viewModel.uiState.value
         assertFalse(state.isExporting)
         assertNull(state.exportProgress)
-        assertEquals("3 枚のキープ写真を書き出しました（2 件は同名ファイルがあるためスキップ）", state.exportSuccessMessage)
+        assertEquals("キープした 3 枚を書き出しました（2 件は同名ファイルがあるためスキップ）", state.exportSuccessMessage)
     }
 
     @Test
@@ -152,7 +152,7 @@ class MainViewModelFeatureTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         assertFalse(secondStarted)
-        assertEquals("1 枚のキープ写真を書き出しました", viewModel.uiState.value.exportSuccessMessage)
+        assertEquals("キープした 1 枚を書き出しました", viewModel.uiState.value.exportSuccessMessage)
     }
 
     @Test
@@ -175,17 +175,17 @@ class MainViewModelFeatureTest {
         startExport(Result.failure(IllegalStateException("容量不足")))
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals("書き出しに失敗しました: 容量不足", viewModel.uiState.value.errorMessage)
+        assertEquals("書き出せませんでした（容量不足）", viewModel.uiState.value.errorMessage)
         assertFalse(viewModel.uiState.value.isExporting)
     }
 
     @Test
     fun exportMessageMentionsFailures() {
         assertEquals(
-            "2 枚のキープ写真を書き出しました（1 件は同名ファイルがあるためスキップ、3 件は失敗）",
+            "キープした 2 枚を書き出しました（1 件は同名ファイルがあるためスキップ、3 件は失敗）",
             MainViewModel.exportMessage(ExportReport(exportedPhotos = 2, skippedFiles = 1, failedFiles = 3)),
         )
-        assertEquals("0 枚のキープ写真を書き出しました", MainViewModel.exportMessage(ExportReport(exportedPhotos = 0)))
+        assertEquals("キープした 0 枚を書き出しました", MainViewModel.exportMessage(ExportReport(exportedPhotos = 0)))
     }
 
     @Test
