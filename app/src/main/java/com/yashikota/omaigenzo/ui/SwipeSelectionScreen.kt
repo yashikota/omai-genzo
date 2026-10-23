@@ -3,6 +3,7 @@ package com.yashikota.omaigenzo.ui
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -17,12 +18,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.nativeKeyCode
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -52,6 +61,7 @@ fun SwipeSelectionScreen(
     onSwipeSkip: (PhotoItem) -> Unit,
     onOpenGallery: () -> Unit,
     onFinishSelection: () -> Unit,
+    onRatePhoto: (PhotoItem, Int) -> Unit = { _, _ -> },
 ) {
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
@@ -65,6 +75,24 @@ fun SwipeSelectionScreen(
     val thresholdY = with(density) { 110.dp.toPx() }
 
     val currentPhoto = photos.getOrNull(currentIndex)
+    val view = LocalView.current
+    val focusRequester = remember { FocusRequester() }
+
+    // Every decision, from a swipe, a button or a key, goes through here so feedback is identical.
+    fun perform(command: SwipeCommand) {
+        val photo = currentPhoto
+        when (command) {
+            SwipeCommand.Keep -> photo?.let(onSwipeAccept)
+            SwipeCommand.Reject -> photo?.let(onSwipeReject)
+            SwipeCommand.Skip -> photo?.let(onSwipeSkip)
+            SwipeCommand.Undo -> onSwipeUndo()
+            is SwipeCommand.Rate -> photo?.let { onRatePhoto(it, command.stars) }
+        }
+        SwipeHaptics.perform(view, command)
+    }
+
+    // Hardware keys reach the screen only while it holds focus.
+    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
 
     // Recomputed when the list changes (once per swipe), never per drag frame.
     val (acceptCount, rejectCount) = remember(photos) {
@@ -162,6 +190,17 @@ fun SwipeSelectionScreen(
             )
         },
         containerColor = DarkBackground,
+        modifier = Modifier
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val command = SwipeKeyMap.commandFor(event.key.nativeKeyCode, reversedDirections)
+                    ?: return@onPreviewKeyEvent false
+                // Holding a key must not fly through the folder.
+                if (event.nativeKeyEvent.repeatCount == 0 && currentPhoto != null) perform(command)
+                true
+            },
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -260,22 +299,22 @@ fun SwipeSelectionScreen(
                                         // Swipe triggers
                                         when {
                                             offsetX > thresholdX -> {
-                                                if (reversedDirections) onSwipeReject(currentPhoto) else onSwipeAccept(currentPhoto)
+                                                perform(if (reversedDirections) SwipeCommand.Reject else SwipeCommand.Keep)
                                                 offsetX = 0f
                                                 offsetY = 0f
                                             }
                                             offsetX < -thresholdX -> {
-                                                if (reversedDirections) onSwipeAccept(currentPhoto) else onSwipeReject(currentPhoto)
+                                                perform(if (reversedDirections) SwipeCommand.Keep else SwipeCommand.Reject)
                                                 offsetX = 0f
                                                 offsetY = 0f
                                             }
                                             offsetY < -thresholdY -> {
-                                                onSwipeUndo()
+                                                perform(SwipeCommand.Undo)
                                                 offsetX = 0f
                                                 offsetY = 0f
                                             }
                                             offsetY > thresholdY -> {
-                                                onSwipeSkip(currentPhoto)
+                                                perform(SwipeCommand.Skip)
                                                 offsetX = 0f
                                                 offsetY = 0f
                                             }
@@ -361,6 +400,10 @@ fun SwipeSelectionScreen(
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
+                        RatingBar(
+                            rating = currentPhoto.rating,
+                            onRatingChange = { onRatePhoto(currentPhoto, it) },
+                        )
                         Text(currentPhoto.displayFileName, color = TextPrimary, fontSize = 12.sp)
                         if (currentPhoto.modifiedAt > 0L) {
                             Text(
@@ -425,20 +468,20 @@ fun SwipeSelectionScreen(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    FilledTonalIconButton(onClick = onSwipeUndo) {
+                    FilledTonalIconButton(onClick = { perform(SwipeCommand.Undo) }) {
                         Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "前の操作に戻る", tint = UndoPurple)
                     }
-                    FilledTonalButton(onClick = { onSwipeReject(currentPhoto) }) {
+                    FilledTonalButton(onClick = { perform(SwipeCommand.Reject) }) {
                         Icon(Icons.Default.Close, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
                         Text("破棄")
                     }
-                    FilledTonalButton(onClick = { onSwipeAccept(currentPhoto) }) {
+                    FilledTonalButton(onClick = { perform(SwipeCommand.Keep) }) {
                         Icon(Icons.Default.Check, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
                         Text("キープ")
                     }
-                    FilledTonalIconButton(onClick = { onSwipeSkip(currentPhoto) }) {
+                    FilledTonalIconButton(onClick = { perform(SwipeCommand.Skip) }) {
                         Icon(Icons.Default.SkipNext, contentDescription = "保留して次へ", tint = SkipYellow)
                     }
                 }

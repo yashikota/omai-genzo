@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -32,6 +33,7 @@ fun CompletionScreen(
     onExportClick: () -> Unit = {},
     onExportAcceptPhotos: () -> Unit = onExportClick,
     onResumePending: () -> Unit = {},
+    onShareKept: () -> Unit = {},
 ) {
     val totalCount = photos.size
     val acceptCount = photos.count { it.selectionState == SelectionState.ACCEPT }
@@ -169,6 +171,18 @@ fun CompletionScreen(
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                     )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                TextButton(
+                    onClick = onShareKept,
+                    enabled = acceptCount > 0,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "キープしたファイル名の一覧を共有")
                 }
             }
         }

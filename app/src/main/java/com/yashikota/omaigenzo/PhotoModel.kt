@@ -32,6 +32,8 @@ data class PhotoItem(
     val modifiedAt: Long = 0L,
     val fileType: PhotoType = PhotoType.STANDARD,
     var selectionState: SelectionState = SelectionState.PENDING,
+    /** 0 = unrated, 1..[MAX_RATING] stars. Same scale as Lightroom's xmp:Rating. */
+    val rating: Int = 0,
     var exifInfo: ExifInfo = ExifInfo(),
 ) {
     val displayFileName: String
@@ -51,6 +53,10 @@ data class PhotoItem(
     fun hasJpegPreview(): Boolean = jpgPath != null || jpgUriString != null
 
     fun shouldUseRawRenderer(): Boolean = isRawFile() && !hasJpegPreview()
+
+    companion object {
+        const val MAX_RATING = 5
+    }
 }
 
 data class SessionSummary(

@@ -11,27 +11,36 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.yashikota.omaigenzo.data.ExportOptions
 import com.yashikota.omaigenzo.data.LocalPhotoRepository
 import com.yashikota.omaigenzo.data.PerfLogger
 import com.yashikota.omaigenzo.ui.CompletionScreen
+import com.yashikota.omaigenzo.ui.ExportOptionsSheet
+import com.yashikota.omaigenzo.ui.ExportProgressDialog
 import com.yashikota.omaigenzo.ui.FolderSelectScreen
 import com.yashikota.omaigenzo.ui.GalleryScreen
 import com.yashikota.omaigenzo.ui.MainUiAction
 import com.yashikota.omaigenzo.ui.MainViewModel
 import com.yashikota.omaigenzo.ui.ScreenState
 import com.yashikota.omaigenzo.ui.SwipeSelectionScreen
+import com.yashikota.omaigenzo.ui.shareKeptFileList
 import com.yashikota.omaigenzo.ui.theme.OmaiGenzoTheme
 
 class MainActivity : ComponentActivity() {
@@ -102,12 +111,37 @@ fun OmaiGenzoApp(
         }
     }
 
+    LaunchedEffect(uiState.bulkChange) {
+        val change = uiState.bulkChange ?: return@LaunchedEffect
+        val label = when (change.state) {
+            SelectionState.ACCEPT -> "キープ"
+            SelectionState.REJECT -> "破棄"
+            SelectionState.PENDING -> "保留"
+        }
+        val result = snackbarHostState.showSnackbar(
+            message = "${change.count} 枚を${label}にしました",
+            actionLabel = "元に戻す",
+            withDismissAction = true,
+            duration = SnackbarDuration.Long,
+        )
+        viewModel.onAction(if (result == SnackbarResult.ActionPerformed) MainUiAction.UndoBulkChange else MainUiAction.DismissBulkChange)
+    }
+
+    // The sheet decides what to write, then the system picker decides where.
+    var showExportSheet by rememberSaveable { mutableStateOf(false) }
+    var exportOptions by remember { mutableStateOf(ExportOptions()) }
     val exportPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
     ) { uri: Uri? ->
         uri?.let {
-            viewModel.onAction(MainUiAction.ExportAcceptedPhotos(it))
+            viewModel.onAction(MainUiAction.ExportAcceptedPhotos(it, exportOptions))
         }
+    }
+    val openExport = { showExportSheet = true }
+    val shareKept = {
+        runCatching { shareKeptFileList(context, uiState.photos) }
+            .onFailure { viewModel.onAction(MainUiAction.ShowError("共有できるアプリが見つかりませんでした")) }
+        Unit
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -130,6 +164,7 @@ fun OmaiGenzoApp(
                     onSwipeSkip = { viewModel.onAction(MainUiAction.SwipeSkip(it)) },
                     onOpenGallery = { viewModel.onAction(MainUiAction.NavigateTo(ScreenState.GALLERY)) },
                     onFinishSelection = { viewModel.onAction(MainUiAction.NavigateTo(ScreenState.COMPLETION)) },
+                    onRatePhoto = { photo, rating -> viewModel.onAction(MainUiAction.SetRating(photo.id, rating)) },
                 )
             }
             ScreenState.GALLERY -> {
@@ -140,7 +175,11 @@ fun OmaiGenzoApp(
                     onSelectionChanged = { photoId, newState ->
                         viewModel.onAction(MainUiAction.ChangePhotoSelection(photoId, newState))
                     },
-                    onExportClick = { exportPickerLauncher.launch(null) },
+                    onExportClick = openExport,
+                    onSelectionChangedForMany = { ids, state -> viewModel.onAction(MainUiAction.ChangeSelectionForMany(ids, state)) },
+                    onRatePhoto = { id, rating -> viewModel.onAction(MainUiAction.SetRating(id, rating)) },
+                    onStartSelectionAt = { viewModel.onAction(MainUiAction.StartSelectionAt(it)) },
+                    onShareKept = shareKept,
                 )
             }
             ScreenState.COMPLETION -> {
@@ -149,9 +188,25 @@ fun OmaiGenzoApp(
                     onResetClick = { viewModel.onAction(MainUiAction.ResetSession) },
                     onResumePending = { viewModel.onAction(MainUiAction.ResumePending) },
                     onGalleryClick = { viewModel.onAction(MainUiAction.NavigateTo(ScreenState.GALLERY)) },
-                    onExportClick = { exportPickerLauncher.launch(null) },
+                    onExportClick = openExport,
+                    onShareKept = shareKept,
                 )
             }
+        }
+        if (showExportSheet) {
+            ExportOptionsSheet(
+                photos = uiState.photos,
+                initial = exportOptions,
+                onDismiss = { showExportSheet = false },
+                onConfirm = { options ->
+                    exportOptions = options
+                    showExportSheet = false
+                    exportPickerLauncher.launch(null)
+                },
+            )
+        }
+        uiState.exportProgress?.let { progress ->
+            ExportProgressDialog(progress = progress, onCancel = { viewModel.onAction(MainUiAction.CancelExport) })
         }
         SnackbarHost(
             hostState = snackbarHostState,

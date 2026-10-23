@@ -5,15 +5,26 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import com.yashikota.omaigenzo.data.ExportEntry
+import com.yashikota.omaigenzo.data.ExportFile
+import com.yashikota.omaigenzo.data.ExportOptions
+import com.yashikota.omaigenzo.data.ExportPlanner
+import com.yashikota.omaigenzo.data.ExportProgress
+import com.yashikota.omaigenzo.data.ExportReport
+import com.yashikota.omaigenzo.data.ExportSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.UUID
 
 data class ImportProgress(
@@ -38,6 +49,10 @@ class FolderImportManager(val context: Context) {
         private const val TAG = "FolderImportManager"
         private val RAW_EXTENSIONS = setOf("arw", "cr2", "cr3", "nef", "dng", "orf", "rw2", "pef", "raf")
         private val JPG_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp")
+
+        // Large enough that a 50 MB RAW is a few hundred provider writes, small enough to check
+        // for cancellation several times a second.
+        private const val COPY_BUFFER_BYTES = 256 * 1024
     }
 
     private val _importProgress = MutableStateFlow(ImportProgress())
@@ -193,68 +208,98 @@ class FolderImportManager(val context: Context) {
         }
     }
 
-    suspend fun exportAcceptPhotosToUri(targetTreeUri: Uri, photoItems: List<PhotoItem>): Int = withContext(Dispatchers.IO) {
-        val targetDoc = DocumentFile.fromTreeUri(context, targetTreeUri) ?: return@withContext 0
-        val acceptItems = photoItems.filter { it.selectionState == SelectionState.ACCEPT }
-        var exportedCount = 0
-
-        acceptItems.forEach { item ->
-            val rawExported = copyPhotoSource(
-                targetDoc = targetDoc,
-                path = item.rawPath,
-                uriString = item.rawUriString,
-                fileName = "${item.baseName}.${item.rawExtension}",
-                mimeType = rawMimeType(item.rawExtension),
-            )
-            val jpegExported = copyPhotoSource(
-                targetDoc = targetDoc,
-                path = item.jpgPath,
-                uriString = item.jpgUriString,
-                fileName = "${item.baseName}.${item.jpgExtension}",
-                mimeType = standardMimeType(item.jpgExtension),
-            )
-            if (rawExported || jpegExported) exportedCount++
-        }
-        return@withContext exportedCount
+    suspend fun exportAcceptPhotosToUri(targetTreeUri: Uri, photoItems: List<PhotoItem>): Int {
+        val entries = ExportPlanner.plan(photoItems, ExportOptions(writeXmpSidecar = false, skipExisting = false))
+        return exportToUri(targetTreeUri, entries, skipExisting = false).exportedPhotos
     }
 
-    private fun copyPhotoSource(
-        targetDoc: DocumentFile,
-        path: String?,
-        uriString: String?,
-        fileName: String,
-        mimeType: String,
-    ): Boolean {
-        if (path == null && uriString == null) return false
-        return try {
-            val newDoc = targetDoc.createFile(mimeType, fileName) ?: return false
-            val output = context.contentResolver.openOutputStream(newDoc.uri) ?: return false
-            output.use { destination ->
-                when {
-                    path != null -> File(path).takeIf(File::exists)?.inputStream()?.use { it.copyTo(destination) }
-                        ?: return false
-                    uriString != null -> context.contentResolver.openInputStream(uriString.toUri())?.use { it.copyTo(destination) }
-                        ?: return false
+    /**
+     * Copies [entries] into [targetTreeUri]. Existing names are read with one listing up front instead
+     * of one provider lookup per file. Cancelling the calling coroutine stops between chunks and
+     * removes the half-written file, so the destination never keeps a truncated photo.
+     */
+    suspend fun exportToUri(
+        targetTreeUri: Uri,
+        entries: List<ExportEntry>,
+        skipExisting: Boolean = true,
+        onProgress: (ExportProgress) -> Unit = {},
+    ): ExportReport = withContext(Dispatchers.IO) {
+        val targetDoc = DocumentFile.fromTreeUri(context, targetTreeUri)
+            ?: throw IllegalStateException("書き出し先フォルダを開けませんでした")
+        val existing = HashSet<String>()
+        if (skipExisting) targetDoc.listFiles().mapNotNullTo(existing) { it.name?.lowercase() }
+        var exportedPhotos = 0
+        var written = 0
+        var skipped = 0
+        var failed = 0
+        val buffer = ByteArray(COPY_BUFFER_BYTES)
+
+        for ((index, entry) in entries.withIndex()) {
+            if (!isActive) return@withContext ExportReport(exportedPhotos, written, skipped, failed, cancelled = true)
+            onProgress(ExportProgress(index, entries.size, entry.displayName))
+            var photoDone = false
+            for (file in entry.files) {
+                val key = file.fileName.lowercase()
+                if (skipExisting && key in existing) {
+                    skipped++
+                    photoDone = true
+                    continue
+                }
+                when (writeFile(targetDoc, file, buffer)) {
+                    WriteOutcome.WRITTEN -> {
+                        written++
+                        photoDone = true
+                        existing += key
+                    }
+                    WriteOutcome.FAILED -> failed++
+                    WriteOutcome.CANCELLED -> {
+                        return@withContext ExportReport(exportedPhotos, written, skipped, failed, cancelled = true)
+                    }
                 }
             }
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to export $fileName: ${e.message}")
-            false
+            if (photoDone) exportedPhotos++
         }
+        onProgress(ExportProgress(entries.size, entries.size))
+        ExportReport(exportedPhotos, written, skipped, failed)
     }
 
-    private fun rawMimeType(extension: String): String = when (extension.lowercase()) {
-        "dng" -> "image/x-adobe-dng"
-        "cr2", "cr3" -> "image/x-canon-cr2"
-        "nef" -> "image/x-nikon-nef"
-        "arw" -> "image/x-sony-arw"
-        else -> "application/octet-stream"
+    private enum class WriteOutcome { WRITTEN, FAILED, CANCELLED }
+
+    private suspend fun writeFile(targetDoc: DocumentFile, file: ExportFile, buffer: ByteArray): WriteOutcome {
+        val newDoc = try {
+            targetDoc.createFile(file.mimeType, file.fileName)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create ${file.fileName}: ${e.message}")
+            null
+        } ?: return WriteOutcome.FAILED
+        val outcome = try {
+            context.contentResolver.openOutputStream(newDoc.uri)?.use { destination ->
+                when (val source = file.source) {
+                    is ExportSource.Inline -> {
+                        destination.write(source.bytes)
+                        WriteOutcome.WRITTEN
+                    }
+                    is ExportSource.LocalFile -> File(source.path).takeIf(File::exists)?.inputStream()
+                        ?.use { copyCancellable(it, destination, buffer) }
+                    is ExportSource.ContentUri -> context.contentResolver.openInputStream(source.uriString.toUri())
+                        ?.use { copyCancellable(it, destination, buffer) }
+                }
+            } ?: WriteOutcome.FAILED
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to export ${file.fileName}: ${e.message}")
+            WriteOutcome.FAILED
+        }
+        if (outcome != WriteOutcome.WRITTEN) runCatching { newDoc.delete() }
+        return outcome
     }
 
-    private fun standardMimeType(extension: String): String = when (extension.lowercase()) {
-        "png" -> "image/png"
-        "webp" -> "image/webp"
-        else -> "image/jpeg"
+    private suspend fun copyCancellable(input: InputStream, output: OutputStream, buffer: ByteArray): WriteOutcome {
+        val coroutineContext = currentCoroutineContext()
+        while (true) {
+            if (!coroutineContext.isActive) return WriteOutcome.CANCELLED
+            val read = input.read(buffer)
+            if (read < 0) return WriteOutcome.WRITTEN
+            output.write(buffer, 0, read)
+        }
     }
 }

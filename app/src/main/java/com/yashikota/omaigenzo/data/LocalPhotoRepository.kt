@@ -7,6 +7,7 @@ import com.yashikota.omaigenzo.FolderImportManager
 import com.yashikota.omaigenzo.PhotoItem
 import com.yashikota.omaigenzo.PhotoType
 import com.yashikota.omaigenzo.SelectionState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +26,7 @@ class LocalPhotoRepository(
     private companion object {
         const val KEY_PHOTOS = "photos"
         const val KEY_SELECTION = "selection"
+        const val KEY_RATING = "rating"
         const val MAX_UNDO_DEPTH = 1_024
     }
 
@@ -48,7 +50,11 @@ class LocalPhotoRepository(
             // A snapshot taken before an import or reset must not resurrect the old session.
             if (pending.generation == sessionGeneration) {
                 val encoded = SelectionCodec.encode(pending.photos.map { it.selectionState })
-                preferences.edit { putString(KEY_SELECTION, encoded) }
+                val ratings = RatingCodec.encode(pending.photos.map { it.rating })
+                preferences.edit {
+                    putString(KEY_SELECTION, encoded)
+                    putString(KEY_RATING, ratings)
+                }
             }
         }
     }
@@ -77,6 +83,16 @@ class LocalPhotoRepository(
         if (store.update(photoId, state)) publishSelection()
     }
 
+    override fun updateRating(photoId: String, rating: Int) {
+        if (store.updateRating(photoId, rating)) publishSelection()
+    }
+
+    override fun updateSelections(photoIds: Collection<String>, state: SelectionState): Int {
+        val changed = store.updateMany(photoIds, state)
+        if (changed > 0) publishSelection()
+        return changed
+    }
+
     override fun undoLastSelection(): Boolean {
         if (!store.undo()) return false
         publishSelection()
@@ -97,6 +113,25 @@ class LocalPhotoRepository(
         } else {
             Result.success(count)
         }
+    } catch (e: Exception) {
+        PerfLogger.event("export_error", "\"error\":\"${PerfLogger.escape(e.stackTraceToString())}\"")
+        Result.failure(e)
+    }
+
+    override suspend fun exportAcceptedPhotos(
+        outputUri: Uri,
+        options: ExportOptions,
+        onProgress: (ExportProgress) -> Unit,
+    ): Result<ExportReport> = try {
+        val entries = ExportPlanner.plan(photosState.value, options)
+        val report = importManager.exportToUri(outputUri, entries, options.skipExisting, onProgress)
+        if (!report.cancelled && entries.isNotEmpty() && report.exportedPhotos == 0) {
+            Result.failure(IllegalStateException("写真を1件も保存できませんでした"))
+        } else {
+            Result.success(report)
+        }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         PerfLogger.event("export_error", "\"error\":\"${PerfLogger.escape(e.stackTraceToString())}\"")
         Result.failure(e)
@@ -137,6 +172,7 @@ class LocalPhotoRepository(
         preferences.edit {
             putString(KEY_PHOTOS, array.toString())
             putString(KEY_SELECTION, SelectionCodec.encode(photos.map { it.selectionState }))
+            putString(KEY_RATING, RatingCodec.encode(photos.map { it.rating }))
         }
     }
 
@@ -162,7 +198,17 @@ class LocalPhotoRepository(
         }
         // Sessions saved before the compact snapshot existed keep their per-item state.
         val snapshot = preferences.getString(KEY_SELECTION, null)?.let { SelectionCodec.decode(it, items.size) }
-        if (snapshot == null) items else items.mapIndexed { i, item -> item.copy(selectionState = snapshot[i]) }
+        val ratings = preferences.getString(KEY_RATING, null)?.let { RatingCodec.decode(it, items.size) }
+        if (snapshot == null && ratings == null) {
+            items
+        } else {
+            items.mapIndexed { i, item ->
+                item.copy(
+                    selectionState = snapshot?.get(i) ?: item.selectionState,
+                    rating = ratings?.get(i) ?: item.rating,
+                )
+            }
+        }
     } catch (_: Exception) {
         emptyList()
     }

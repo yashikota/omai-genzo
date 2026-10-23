@@ -1,9 +1,11 @@
 package com.yashikota.omaigenzo.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -20,8 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,10 +44,27 @@ fun GalleryScreen(
     onPhotoSelectionChanged: (PhotoItem, SelectionState) -> Unit = { photo, state -> onSelectionChanged(photo.id, state) },
     onExportClick: () -> Unit = {},
     onExportAcceptPhotos: () -> Unit = onExportClick,
+    onSelectionChangedForMany: (Set<String>, SelectionState) -> Unit = { ids, state -> ids.forEach { onSelectionChanged(it, state) } },
+    onRatePhoto: (String, Int) -> Unit = { _, _ -> },
+    onStartSelectionAt: (String) -> Unit = {},
+    onShareKept: () -> Unit = {},
 ) {
-    val context = LocalContext.current
     var selectedFilter by remember { mutableStateOf(FilterCategory.ALL) }
-    var selectedPhotoForDetail by remember { mutableStateOf<PhotoItem?>(null) }
+    // The detail dialog follows the live list, so a rating or decision made in it shows immediately.
+    var detailPhotoId by remember { mutableStateOf<String?>(null) }
+    val selectedPhotoForDetail = remember(photos, detailPhotoId) { detailPhotoId?.let { id -> photos.firstOrNull { it.id == id } } }
+    // Long-press starts multi-select; while anything is selected, taps toggle instead of opening.
+    var multiSelection by remember { mutableStateOf(emptySet<String>()) }
+    val inSelectionMode = multiSelection.isNotEmpty()
+    val haptics = LocalHapticFeedback.current
+    val keptCount = remember(photos) { photos.count { it.selectionState == SelectionState.ACCEPT } }
+
+    BackHandler(enabled = inSelectionMode) { multiSelection = emptySet() }
+
+    fun applyToSelection(state: SelectionState) {
+        onSelectionChangedForMany(multiSelection, state)
+        multiSelection = emptySet()
+    }
 
     val filteredPhotos = remember(photos, selectedFilter) {
         when (selectedFilter) {
@@ -57,26 +77,38 @@ fun GalleryScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "選別結果ギャラリー",
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackToSwipe) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る", tint = PrimaryNeon)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onExportAcceptPhotos) {
-                        Icon(imageVector = Icons.Default.Download, contentDescription = "書き出し", tint = AcceptGreen)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground),
-            )
+            if (inSelectionMode) {
+                SelectionTopBar(
+                    count = multiSelection.size,
+                    onClear = { multiSelection = emptySet() },
+                    onSelectAll = { multiSelection = filteredPhotos.mapTo(HashSet()) { it.id } },
+                    onApply = ::applyToSelection,
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "選別結果ギャラリー",
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary,
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBackToSwipe) {
+                            Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る", tint = PrimaryNeon)
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onShareKept, enabled = keptCount > 0) {
+                            Icon(imageVector = Icons.Default.Share, contentDescription = "キープ一覧を共有", tint = PrimaryNeon)
+                        }
+                        IconButton(onClick = onExportAcceptPhotos) {
+                            Icon(imageVector = Icons.Default.Download, contentDescription = "書き出し", tint = AcceptGreen)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground),
+                )
+            }
         },
         containerColor = DarkBackground,
     ) { innerPadding ->
@@ -132,10 +164,22 @@ fun GalleryScreen(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(filteredPhotos, key = { it.id }) { photo ->
+                        val isSelected = photo.id in multiSelection
                         GalleryItemCard(
                             photoItem = photo,
                             libRawBridge = libRawBridge,
-                            onClick = { selectedPhotoForDetail = photo },
+                            isSelected = isSelected,
+                            onClick = {
+                                if (inSelectionMode) {
+                                    multiSelection = if (isSelected) multiSelection - photo.id else multiSelection + photo.id
+                                } else {
+                                    detailPhotoId = photo.id
+                                }
+                            },
+                            onLongClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                multiSelection = if (isSelected) multiSelection - photo.id else multiSelection + photo.id
+                            },
                         )
                     }
                 }
@@ -144,12 +188,24 @@ fun GalleryScreen(
 
         // Full Detail Modal Lightbox
         if (selectedPhotoForDetail != null) {
-            val photo = selectedPhotoForDetail!!
+            val photo = selectedPhotoForDetail
             AlertDialog(
-                onDismissRequest = { selectedPhotoForDetail = null },
+                onDismissRequest = { detailPhotoId = null },
                 confirmButton = {
-                    TextButton(onClick = { selectedPhotoForDetail = null }) {
+                    TextButton(onClick = { detailPhotoId = null }) {
                         Text("閉じる", color = PrimaryNeon)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            detailPhotoId = null
+                            onStartSelectionAt(photo.id)
+                        },
+                    ) {
+                        Icon(Icons.Default.Swipe, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("この写真から選別")
                     }
                 },
                 title = {
@@ -179,17 +235,23 @@ fun GalleryScreen(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        RatingBar(
+                            rating = photo.rating,
+                            onRatingChange = { onRatePhoto(photo.id, it) },
+                            starSize = 28.dp,
+                            inactiveColor = TextTertiary,
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly,
                         ) {
                             Button(
-                                onClick = {
-                                    onPhotoSelectionChanged(photo, SelectionState.ACCEPT)
-                                    selectedPhotoForDetail = photo.copy(selectionState = SelectionState.ACCEPT)
-                                },
+                                onClick = { onPhotoSelectionChanged(photo, SelectionState.ACCEPT) },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (photo.selectionState == SelectionState.ACCEPT) AcceptGreen else DarkSurface,
                                 ),
@@ -203,10 +265,7 @@ fun GalleryScreen(
                             }
 
                             Button(
-                                onClick = {
-                                    onPhotoSelectionChanged(photo, SelectionState.REJECT)
-                                    selectedPhotoForDetail = photo.copy(selectionState = SelectionState.REJECT)
-                                },
+                                onClick = { onPhotoSelectionChanged(photo, SelectionState.REJECT) },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (photo.selectionState == SelectionState.REJECT) RejectRed else DarkSurface,
                                 ),
@@ -228,11 +287,52 @@ fun GalleryScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionTopBar(
+    count: Int,
+    onClear: () -> Unit,
+    onSelectAll: () -> Unit,
+    onApply: (SelectionState) -> Unit,
+) {
+    TopAppBar(
+        title = { Text("$count 件選択", fontWeight = FontWeight.Bold) },
+        navigationIcon = {
+            IconButton(onClick = onClear) {
+                Icon(Icons.Default.Close, contentDescription = "選択を解除")
+            }
+        },
+        actions = {
+            IconButton(onClick = onSelectAll) {
+                Icon(Icons.Default.SelectAll, contentDescription = "表示中の写真をすべて選択")
+            }
+            IconButton(onClick = { onApply(SelectionState.ACCEPT) }) {
+                Icon(Icons.Default.Check, contentDescription = "選択した写真をキープ", tint = AcceptGreen)
+            }
+            IconButton(onClick = { onApply(SelectionState.REJECT) }) {
+                Icon(Icons.Default.Block, contentDescription = "選択した写真を破棄", tint = RejectRed)
+            }
+            IconButton(onClick = { onApply(SelectionState.PENDING) }) {
+                Icon(Icons.Default.HourglassEmpty, contentDescription = "選択した写真を保留に戻す", tint = SkipYellow)
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            titleContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            navigationIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            actionIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ),
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GalleryItemCard(
     photoItem: PhotoItem,
     libRawBridge: LibRawBridge,
     onClick: () -> Unit,
+    isSelected: Boolean = false,
+    onLongClick: () -> Unit = {},
 ) {
     var thumbnail by remember(photoItem.id, photoItem.modifiedAt) {
         mutableStateOf(
@@ -270,7 +370,7 @@ private fun GalleryItemCard(
                 },
                 shape = RoundedCornerShape(12.dp),
             )
-            .clickable { onClick() },
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick, onLongClickLabel = "複数選択"),
     ) {
         val shown = thumbnail
         if (shown != null) {
@@ -325,6 +425,33 @@ private fun GalleryItemCard(
                 color = if (photoItem.isRawFile()) PrimaryNeon else AcceptGreen,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
+            )
+        }
+
+        RatingBadge(
+            rating = photoItem.rating,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(6.dp),
+        )
+
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+                    .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)),
+            )
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = "選択中",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onPrimary),
             )
         }
     }
