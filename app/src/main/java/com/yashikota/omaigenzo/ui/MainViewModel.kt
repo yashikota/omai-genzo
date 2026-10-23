@@ -76,7 +76,7 @@ class MainViewModel(
                         state.copy(
                             isImporting = false,
                             currentScreen = ScreenState.FOLDER_SELECT,
-                            errorMessage = "対応する写真が見つかりませんでした",
+                            errorMessage = "このフォルダに対応する写真（RAW・JPEG）が見つかりませんでした",
                         )
                     } else {
                         state.copy(isImporting = false, currentIndex = 0, currentScreen = ScreenState.SWIPE_SELECTION)
@@ -86,7 +86,7 @@ class MainViewModel(
                 _uiState.update {
                     it.copy(
                         isImporting = false,
-                        errorMessage = "フォルダの取り込みに失敗しました: ${error.message}",
+                        errorMessage = "フォルダを読み込めませんでした（${error.message}）",
                     )
                 }
             }
@@ -145,14 +145,14 @@ class MainViewModel(
                 _uiState.update {
                     it.copy(
                         isExporting = false,
-                        exportSuccessMessage = "$count 件のキープ写真を保存しました！",
+                        exportSuccessMessage = "キープした $count 枚を書き出しました",
                     )
                 }
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
                         isExporting = false,
-                        errorMessage = "書き出しに失敗しました: ${error.message}",
+                        errorMessage = "書き出せませんでした（${error.message}）",
                     )
                 }
             }
