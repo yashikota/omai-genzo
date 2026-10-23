@@ -1,26 +1,74 @@
 package com.yashikota.omaigenzo.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Stars
-import androidx.compose.material3.*
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.yashikota.omaigenzo.PhotoItem
+import com.yashikota.omaigenzo.R
 import com.yashikota.omaigenzo.SelectionState
-import com.yashikota.omaigenzo.ui.theme.*
+import com.yashikota.omaigenzo.ui.components.ButtonContent
+import com.yashikota.omaigenzo.ui.components.SectionLabel
+import com.yashikota.omaigenzo.ui.components.label
+import com.yashikota.omaigenzo.ui.theme.OmaiTheme
+import com.yashikota.omaigenzo.ui.theme.Spacing
+import com.yashikota.omaigenzo.ui.theme.tabular
 
 @Composable
 fun CompletionScreen(
@@ -32,145 +80,240 @@ fun CompletionScreen(
     onExportClick: () -> Unit = {},
     onExportAcceptPhotos: () -> Unit = onExportClick,
     onResumePending: () -> Unit = {},
+    isExporting: Boolean = false,
 ) {
     val totalCount = photos.size
     val acceptCount = photos.count { it.selectionState == SelectionState.ACCEPT }
     val rejectCount = photos.count { it.selectionState == SelectionState.REJECT }
     val pendingCount = photos.count { it.selectionState == SelectionState.PENDING }
-    val acceptPercentage = if (totalCount > 0) (acceptCount * 100) / totalCount else 0
+    val complete = pendingCount == 0
+    var confirmReset by rememberSaveable { mutableStateOf(false) }
 
-    Scaffold(
-        containerColor = DarkBackground,
-    ) { innerPadding ->
-        Box(
+    Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(24.dp),
-            contentAlignment = Alignment.Center,
+                .windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
+            val viewportHeight = maxHeight
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(DarkSurface)
-                    .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
-                    .padding(28.dp),
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = viewportHeight)
+                    .padding(horizontal = Spacing.xl, vertical = Spacing.xxl),
                 horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
             ) {
-                Icon(
-                    imageVector = Icons.Default.Stars,
-                    contentDescription = null,
-                    tint = PrimaryNeon,
-                    modifier = Modifier.size(72.dp),
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = if (pendingCount == 0) "選別が完了しました！" else "写真を一巡しました",
-                    color = TextPrimary,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = if (pendingCount == 0) "全 $totalCount 枚の判定が終わりました。" else "$pendingCount 枚が保留になっています。",
-                    color = TextSecondary,
-                    fontSize = 14.sp,
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(DarkSurfaceVariant)
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                Column(
+                    modifier = Modifier.widthIn(max = Spacing.contentMaxWidth),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "$acceptCount 枚", color = AcceptGreen, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text(text = "キープ ($acceptPercentage%)", color = TextSecondary, fontSize = 12.sp)
-                    }
-
+                    val heroColor = if (complete) OmaiTheme.colors.keep else OmaiTheme.colors.pending
+                    val heroContainer = if (complete) OmaiTheme.colors.keepContainer else OmaiTheme.colors.pendingContainer
                     Box(
                         modifier = Modifier
-                            .width(1.dp)
-                            .height(40.dp)
-                            .background(BorderColor),
-                    )
-
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "$rejectCount 枚", color = RejectRed, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text(text = "破棄", color = TextSecondary, fontSize = 12.sp)
+                            .size(80.dp)
+                            .clip(CircleShape)
+                            .background(heroContainer),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = if (complete) Icons.Rounded.CheckCircle else Icons.Rounded.Schedule,
+                            contentDescription = null,
+                            tint = heroColor,
+                            modifier = Modifier.size(40.dp),
+                        )
                     }
-                }
 
-                Spacer(modifier = Modifier.height(32.dp))
-
-                Button(
-                    onClick = if (pendingCount > 0) onResumePending else onRestartSelection,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeon),
-                    shape = RoundedCornerShape(12.dp),
-                ) {
-                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null, tint = DarkBackground)
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(Modifier.height(Spacing.xl))
                     Text(
-                        text = if (pendingCount > 0) "保留した写真を続ける" else "別のフォルダを選ぶ",
-                        color = DarkBackground,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
+                        text = stringResource(if (complete) R.string.done_title_complete else R.string.done_title_partial),
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.semantics { heading() },
                     )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedButton(
-                    onClick = onOpenGallery,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryNeon),
-                ) {
-                    Icon(imageVector = Icons.Default.GridView, contentDescription = null, tint = PrimaryNeon)
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(Modifier.height(Spacing.sm))
                     Text(
-                        text = "ギャラリーで結果を確認",
-                        color = PrimaryNeon,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
+                        text = if (complete) {
+                            stringResource(R.string.done_body_complete, totalCount)
+                        } else {
+                            stringResource(R.string.done_body_partial, pendingCount)
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
-                }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedButton(
-                    onClick = onExportAcceptPhotos,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AcceptGreen),
-                ) {
-                    Icon(imageVector = Icons.Default.Download, contentDescription = null, tint = AcceptGreen)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "キープ写真を書き出す ($acceptCount 枚)",
-                        color = AcceptGreen,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
+                    Spacer(Modifier.height(Spacing.xxl))
+                    Breakdown(
+                        total = totalCount,
+                        keep = acceptCount,
+                        reject = rejectCount,
+                        pending = pendingCount,
                     )
+
+                    Spacer(Modifier.height(Spacing.xxl))
+
+                    val exportText = when {
+                        isExporting -> stringResource(R.string.done_exporting)
+                        acceptCount == 0 -> stringResource(R.string.done_export_none)
+                        else -> stringResource(R.string.done_export, acceptCount)
+                    }
+                    if (!complete) {
+                        Button(
+                            onClick = onResumePending,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                            shape = MaterialTheme.shapes.medium,
+                        ) {
+                            ButtonContent(stringResource(R.string.done_review_pending, pendingCount), Icons.Rounded.Schedule)
+                        }
+                        Spacer(Modifier.height(Spacing.md))
+                        FilledTonalButton(
+                            onClick = { if (!isExporting) onExportAcceptPhotos() },
+                            enabled = acceptCount > 0,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                            shape = MaterialTheme.shapes.medium,
+                        ) {
+                            ButtonContent(exportText, Icons.Rounded.Download, loading = isExporting)
+                        }
+                    } else {
+                        Button(
+                            onClick = { if (!isExporting) onExportAcceptPhotos() },
+                            enabled = acceptCount > 0,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                            shape = MaterialTheme.shapes.medium,
+                        ) {
+                            ButtonContent(exportText, Icons.Rounded.Download, loading = isExporting)
+                        }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+                    OutlinedButton(
+                        onClick = onOpenGallery,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        ButtonContent(stringResource(R.string.done_open_gallery), Icons.Rounded.GridView)
+                    }
+                    Spacer(Modifier.height(Spacing.lg))
+                    TextButton(onClick = { confirmReset = true }) {
+                        ButtonContent(stringResource(R.string.done_new_folder), Icons.Rounded.FolderOpen)
+                    }
                 }
             }
         }
+    }
+
+    if (confirmReset) {
+        AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            icon = { Icon(Icons.Rounded.FolderOpen, contentDescription = null) },
+            title = { Text(stringResource(R.string.done_reset_title)) },
+            text = { Text(stringResource(R.string.done_reset_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmReset = false
+                        onRestartSelection()
+                    },
+                ) { Text(stringResource(R.string.done_reset_confirm), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmReset = false }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun Breakdown(total: Int, keep: Int, reject: Int, pending: Int) {
+    val colors = OmaiTheme.colors
+    // The bar fills in once on arrival; afterwards it is static.
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { reveal.animateTo(1f, tween(durationMillis = 600, easing = FastOutSlowInEasing)) }
+    val track = MaterialTheme.colorScheme.surfaceContainerHighest
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(Spacing.lg)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                SectionLabel(stringResource(R.string.done_breakdown), Modifier.weight(1f))
+                Text(
+                    text = stringResource(R.string.count_photos, total),
+                    style = MaterialTheme.typography.labelLarge.tabular(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(Spacing.md))
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(12.dp)
+                    .clearAndSetSemantics {},
+            ) {
+                val radius = CornerRadius(size.height / 2f)
+                drawRoundRect(track, cornerRadius = radius)
+                if (total == 0) return@Canvas
+                val gap = 2.dp.toPx()
+                var x = 0f
+                listOf(keep to colors.keep, reject to colors.reject, pending to colors.pending).forEach { (count, color) ->
+                    if (count == 0) return@forEach
+                    val w = size.width * count / total * reveal.value
+                    drawRoundRect(
+                        color = color,
+                        topLeft = Offset(x, 0f),
+                        size = Size((w - gap).coerceAtLeast(size.height), size.height),
+                        cornerRadius = radius,
+                    )
+                    x += w
+                }
+            }
+            Spacer(Modifier.height(Spacing.lg))
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                BreakdownStat(SelectionState.ACCEPT, keep, total, Modifier.weight(1f))
+                BreakdownStat(SelectionState.REJECT, reject, total, Modifier.weight(1f))
+                BreakdownStat(SelectionState.PENDING, pending, total, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun BreakdownStat(state: SelectionState, count: Int, total: Int, modifier: Modifier = Modifier) {
+    val label = state.label()
+    val countText = stringResource(R.string.count_photos, count)
+    val percent = stringResource(R.string.done_percent, PhotoFormatting.percent(count, total))
+    Column(
+        modifier = modifier
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(Spacing.md)
+            .clearAndSetSemantics { contentDescription = "$label $countText $percent" },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(OmaiTheme.colors.forState(state)),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(Spacing.xs))
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.headlineSmall.tabular(),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = percent,
+            style = MaterialTheme.typography.labelSmall.tabular(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

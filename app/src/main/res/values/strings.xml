@@ -1,3 +1,88 @@
 <resources>
     <string name="app_name">おまいGENZO!</string>
+
+    <!-- Shared vocabulary -->
+    <string name="state_keep">キープ</string>
+    <string name="state_reject">破棄</string>
+    <string name="state_pending">保留</string>
+    <string name="action_undo">1つ戻る</string>
+    <string name="action_close">閉じる</string>
+    <string name="action_back">戻る</string>
+    <string name="action_cancel">キャンセル</string>
+    <string name="count_photos">%1$d 枚</string>
+    <string name="photo_state_description">%1$s、%2$s</string>
+
+    <!-- Start -->
+    <string name="start_tagline">RAW もサクサク。スワイプだけで写真を選別。</string>
+    <string name="start_gesture_title">操作はスワイプだけ</string>
+    <string name="start_gesture_keep_caption">残したい写真</string>
+    <string name="start_gesture_reject_caption">いらない写真</string>
+    <string name="start_gesture_pending_caption">あとで決める</string>
+    <string name="start_gesture_undo_caption">直前をやり直す</string>
+    <string name="start_gesture_swipe_right">右へ</string>
+    <string name="start_gesture_swipe_left">左へ</string>
+    <string name="start_gesture_swipe_down">下へ</string>
+    <string name="start_gesture_swipe_up">上へ</string>
+    <string name="start_safe_title">元の写真には一切触れません</string>
+    <string name="start_safe_body">フォルダを直接読み込み、書き出すときもキープした写真をコピーするだけです。</string>
+    <string name="start_formats_title">RAW と JPEG をペアで扱えます</string>
+    <string name="start_formats_body">ARW・CR3・NEF・DNG・RAF・ORF・RW2 など。同名の JPEG があれば瞬時に表示します。</string>
+    <string name="start_cta">フォルダを選んで始める</string>
+    <string name="start_importing">写真を読み込んでいます…</string>
+    <string name="start_diagnostics">診断ログの保存先</string>
+    <string name="start_diagnostics_body">%1$s\nLogcat タグ: OmaiPerf</string>
+
+    <!-- Swipe -->
+    <string name="swipe_position">%1$d / %2$d</string>
+    <string name="swipe_open_gallery">一覧で見る</string>
+    <string name="swipe_more">その他の操作</string>
+    <string name="swipe_swap_directions">左右の判定を入れ替える</string>
+    <string name="swipe_swap_directions_on">左右の判定を入れ替え中</string>
+    <string name="swipe_finish">選別を終えて結果を見る</string>
+    <string name="swipe_progress_description">%1$d 枚中 %2$d 枚目。キープ %3$d 枚、破棄 %4$d 枚、保留 %5$d 枚</string>
+    <string name="swipe_hint">スワイプで判定・ダブルタップで拡大</string>
+    <string name="swipe_zoom_reset">%1$s×・タップで全体表示</string>
+    <string name="swipe_done_title">すべての写真を見終わりました</string>
+    <string name="swipe_done_body">結果を確認して、キープした写真を書き出しましょう。</string>
+    <string name="swipe_done_cta">結果を確認する</string>
+    <string name="swipe_photo_description">写真 %1$s</string>
+
+    <!-- Photo card -->
+    <string name="photo_loading_raw">RAW を現像しています…</string>
+    <string name="photo_loading">読み込んでいます…</string>
+    <string name="photo_failed">この写真を表示できませんでした</string>
+
+    <!-- Gallery -->
+    <string name="gallery_title">選別結果</string>
+    <string name="gallery_filter_all">すべて</string>
+    <string name="gallery_export">書き出す</string>
+    <string name="gallery_exporting">書き出し中</string>
+    <string name="gallery_empty_all_title">写真がありません</string>
+    <string name="gallery_empty_all_body">フォルダを読み込むと、ここに一覧で表示されます。</string>
+    <string name="gallery_empty_keep_title">キープした写真はまだありません</string>
+    <string name="gallery_empty_keep_body">スワイプ画面で右にスワイプすると、ここに集まります。</string>
+    <string name="gallery_empty_reject_title">破棄した写真はありません</string>
+    <string name="gallery_empty_reject_body">左にスワイプした写真がここに表示されます。</string>
+    <string name="gallery_empty_pending_title">保留中の写真はありません</string>
+    <string name="gallery_empty_pending_body">すべての写真の判定が済んでいます。</string>
+    <string name="gallery_previous">前の写真</string>
+    <string name="gallery_next">次の写真</string>
+    <string name="gallery_detail_position">%1$d / %2$d</string>
+
+    <!-- Completion -->
+    <string name="done_title_complete">選別が完了しました</string>
+    <string name="done_title_partial">ひととおり見終わりました</string>
+    <string name="done_body_complete">%1$d 枚すべての判定が済みました。</string>
+    <string name="done_body_partial">%1$d 枚が保留のまま残っています。</string>
+    <string name="done_breakdown">内訳</string>
+    <string name="done_percent">%1$d%%</string>
+    <string name="done_review_pending">保留中の %1$d 枚を見直す</string>
+    <string name="done_export">キープした %1$d 枚を書き出す</string>
+    <string name="done_export_none">キープした写真がありません</string>
+    <string name="done_exporting">書き出しています…</string>
+    <string name="done_open_gallery">一覧で確認・修正する</string>
+    <string name="done_new_folder">別のフォルダで始める</string>
+    <string name="done_reset_title">別のフォルダで始めますか？</string>
+    <string name="done_reset_body">いまの選別結果はリセットされます。書き出していない写真があれば、先に書き出してください。</string>
+    <string name="done_reset_confirm">リセットして始める</string>
 </resources>
