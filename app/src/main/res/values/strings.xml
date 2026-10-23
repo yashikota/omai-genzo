@@ -85,4 +85,47 @@
     <string name="done_reset_title">別のフォルダで始めますか？</string>
     <string name="done_reset_body">いまの選別結果はリセットされます。書き出していない写真があれば、先に書き出してください。</string>
     <string name="done_reset_confirm">リセットして始める</string>
+    <!-- Rating -->
+    <string name="rating_none">未評価</string>
+    <string name="rating_value">評価 ★%1$d</string>
+    <string name="rating_set">★%1$d を付ける</string>
+    <string name="rating_clear">★%1$d（タップで評価を外す）</string>
+
+    <!-- Gallery multi-select -->
+    <string name="gallery_selected_count">%1$d 件選択</string>
+    <string name="gallery_clear_selection">選択を解除</string>
+    <string name="gallery_select_all">表示中の写真をすべて選択</string>
+    <string name="gallery_apply_to_selection">選択した写真を%1$sにする</string>
+    <string name="gallery_multi_select">複数選択</string>
+    <string name="gallery_start_here">この写真から選別</string>
+    <string name="bulk_change_done">%1$d 枚を%2$sにしました</string>
+
+    <!-- Share -->
+    <string name="share_kept">キープ一覧を共有</string>
+    <string name="share_kept_list">キープしたファイル名の一覧を共有</string>
+    <string name="share_subject">キープした写真の一覧</string>
+    <string name="share_unavailable">共有できるアプリが見つかりませんでした</string>
+
+    <!-- Export options -->
+    <string name="export_title">キープ写真の書き出し</string>
+    <string name="export_summary">%1$d 枚・約 %2$s</string>
+    <string name="export_nothing">条件に合う写真がありません</string>
+    <string name="export_files">書き出すファイル</string>
+    <string name="export_raw_and_jpeg">RAW+JPEG</string>
+    <string name="export_raw_only">RAWのみ</string>
+    <string name="export_jpeg_only">JPEGのみ</string>
+    <string name="export_files_note">片方しかない写真は、ある方のファイルを書き出します</string>
+    <string name="export_min_rating">評価で絞り込む</string>
+    <string name="export_min_rating_all">すべて</string>
+    <string name="export_min_rating_value">%1$d+</string>
+    <string name="export_xmp">XMPサイドカーを付ける</string>
+    <string name="export_xmp_body">RAWと同名の .xmp に評価を書き込みます（Lightroom・Capture One 対応）</string>
+    <string name="export_xmp_no_raw">RAW写真がないため作成されません</string>
+    <string name="export_skip_existing">同名のファイルはスキップ</string>
+    <string name="export_skip_existing_body">途中で止めても、同じフォルダへもう一度書き出せば続きから保存できます</string>
+    <string name="export_choose_folder">書き出し先を選ぶ</string>
+    <string name="export_progress_title">書き出しています…</string>
+    <string name="export_progress_count">%1$d / %2$d 枚</string>
+    <string name="export_progress_preparing">準備中…</string>
+    <string name="export_stop">中止</string>
 </resources>

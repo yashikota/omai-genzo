@@ -6,11 +6,19 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import com.yashikota.omaigenzo.data.ExportEntry
+import com.yashikota.omaigenzo.data.ExportFile
+import com.yashikota.omaigenzo.data.ExportOptions
+import com.yashikota.omaigenzo.data.ExportPlanner
+import com.yashikota.omaigenzo.data.ExportProgress
+import com.yashikota.omaigenzo.data.ExportReport
+import com.yashikota.omaigenzo.data.ExportSource
 import com.yashikota.omaigenzo.data.FileCopy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -196,72 +204,86 @@ class FolderImportManager(val context: Context) {
         }
     }
 
-    suspend fun exportAcceptPhotosToUri(targetTreeUri: Uri, photoItems: List<PhotoItem>): Int = withContext(Dispatchers.IO) {
-        val targetDoc = DocumentFile.fromTreeUri(context, targetTreeUri) ?: return@withContext 0
-        val acceptItems = photoItems.filter { it.selectionState == SelectionState.ACCEPT }
-        var exportedCount = 0
-
-        acceptItems.forEach { item ->
-            val rawExported = copyPhotoSource(
-                targetDoc = targetDoc,
-                path = item.rawPath,
-                uriString = item.rawUriString,
-                fileName = "${item.baseName}.${item.rawExtension}",
-                mimeType = rawMimeType(item.rawExtension),
-            )
-            val jpegExported = copyPhotoSource(
-                targetDoc = targetDoc,
-                path = item.jpgPath,
-                uriString = item.jpgUriString,
-                fileName = "${item.baseName}.${item.jpgExtension}",
-                mimeType = standardMimeType(item.jpgExtension),
-            )
-            if (rawExported || jpegExported) exportedCount++
-        }
-        return@withContext exportedCount
+    suspend fun exportAcceptPhotosToUri(targetTreeUri: Uri, photoItems: List<PhotoItem>): Int {
+        val entries = ExportPlanner.plan(photoItems, ExportOptions(writeXmpSidecar = false, skipExisting = false))
+        return exportToUri(targetTreeUri, entries, skipExisting = false).exportedPhotos
     }
 
-    private fun copyPhotoSource(
-        targetDoc: DocumentFile,
-        path: String?,
-        uriString: String?,
-        fileName: String,
-        mimeType: String,
-    ): Boolean {
-        if (path == null && uriString == null) return false
-        return try {
-            val newDoc = targetDoc.createFile(mimeType, fileName) ?: return false
-            // Descriptors rather than streams, so FileCopy can hand the copy to the kernel.
-            val target = context.contentResolver.openFileDescriptor(newDoc.uri, "w") ?: return false
-            val copied = ParcelFileDescriptor.AutoCloseOutputStream(target).use { destination ->
-                when {
-                    path != null -> File(path).takeIf(File::exists)?.let { file ->
-                        FileInputStream(file).use { FileCopy.copy(it, destination) }
-                    }
-                    uriString != null -> context.contentResolver.openFileDescriptor(uriString.toUri(), "r")?.let { source ->
-                        ParcelFileDescriptor.AutoCloseInputStream(source).use { FileCopy.copy(it, destination) }
-                    }
-                    else -> null
+    /**
+     * Copies [entries] into [targetTreeUri]. Existing names are read with one listing up front instead
+     * of one provider lookup per file. Cancellation is checked between files; a file whose copy fails
+     * is removed, so the destination never keeps a truncated photo.
+     */
+    suspend fun exportToUri(
+        targetTreeUri: Uri,
+        entries: List<ExportEntry>,
+        skipExisting: Boolean = true,
+        onProgress: (ExportProgress) -> Unit = {},
+    ): ExportReport = withContext(Dispatchers.IO) {
+        val targetDoc = DocumentFile.fromTreeUri(context, targetTreeUri)
+            ?: throw IllegalStateException("書き出し先フォルダを開けませんでした")
+        val existing = HashSet<String>()
+        if (skipExisting) targetDoc.listFiles().mapNotNullTo(existing) { it.name?.lowercase() }
+        var exportedPhotos = 0
+        var written = 0
+        var skipped = 0
+        var failed = 0
+
+        for ((index, entry) in entries.withIndex()) {
+            onProgress(ExportProgress(index, entries.size, entry.displayName))
+            var photoDone = false
+            for (file in entry.files) {
+                if (!isActive) return@withContext ExportReport(exportedPhotos, written, skipped, failed, cancelled = true)
+                val key = file.fileName.lowercase()
+                if (skipExisting && key in existing) {
+                    skipped++
+                    photoDone = true
+                    continue
+                }
+                if (writeFile(targetDoc, file)) {
+                    written++
+                    photoDone = true
+                    existing += key
+                } else {
+                    failed++
                 }
             }
-            copied != null
+            if (photoDone) exportedPhotos++
+        }
+        onProgress(ExportProgress(entries.size, entries.size))
+        ExportReport(exportedPhotos, written, skipped, failed)
+    }
+
+    private fun writeFile(targetDoc: DocumentFile, file: ExportFile): Boolean {
+        val newDoc = try {
+            targetDoc.createFile(file.mimeType, file.fileName)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to export $fileName: ${e.message}")
+            Log.e(TAG, "Failed to create ${file.fileName}: ${e.message}")
+            null
+        } ?: return false
+        val written = try {
+            // Descriptors rather than streams, so FileCopy can hand the copy to the kernel.
+            val target = context.contentResolver.openFileDescriptor(newDoc.uri, "w")
+            target != null &&
+                ParcelFileDescriptor.AutoCloseOutputStream(target).use { destination ->
+                    when (val source = file.source) {
+                        is ExportSource.Inline -> {
+                            destination.write(source.bytes)
+                            true
+                        }
+                        is ExportSource.LocalFile -> File(source.path).takeIf(File::exists)?.let { input ->
+                            FileInputStream(input).use { FileCopy.copy(it, destination) }
+                        } != null
+                        is ExportSource.ContentUri -> context.contentResolver.openFileDescriptor(source.uriString.toUri(), "r")?.let { input ->
+                            ParcelFileDescriptor.AutoCloseInputStream(input).use { FileCopy.copy(it, destination) }
+                        } != null
+                    }
+                }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to export ${file.fileName}: ${e.message}")
             false
         }
-    }
-
-    private fun rawMimeType(extension: String): String = when (extension.lowercase()) {
-        "dng" -> "image/x-adobe-dng"
-        "cr2", "cr3" -> "image/x-canon-cr2"
-        "nef" -> "image/x-nikon-nef"
-        "arw" -> "image/x-sony-arw"
-        else -> "application/octet-stream"
-    }
-
-    private fun standardMimeType(extension: String): String = when (extension.lowercase()) {
-        "png" -> "image/png"
-        "webp" -> "image/webp"
-        else -> "image/jpeg"
+        if (!written) runCatching { newDoc.delete() }
+        return written
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroidSize
@@ -35,6 +36,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Undo
@@ -74,6 +76,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -81,9 +85,15 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.nativeKeyCode
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -208,8 +218,11 @@ fun SwipeSelectionScreen(
     onSwipeSkip: (PhotoItem) -> Unit,
     onOpenGallery: () -> Unit,
     onFinishSelection: () -> Unit,
+    onRatePhoto: (PhotoItem, Int) -> Unit = { _, _ -> },
 ) {
     val cardState = remember { SwipeCardState() }
+    val view = LocalView.current
+    val focusRequester = remember { FocusRequester() }
     var reversedDirections by rememberSaveable { mutableStateOf(false) }
 
     val currentPhoto = photos.getOrNull(currentIndex)
@@ -255,14 +268,28 @@ fun SwipeSelectionScreen(
         prefetch.updateCurrentIndex(currentIndex, photos.size)
     }
 
-    val decide: (SwipeDirection, PhotoItem) -> Unit = { direction, photo ->
-        when (direction) {
-            SwipeDirection.RIGHT -> if (reversedDirections) onSwipeReject(photo) else onSwipeAccept(photo)
-            SwipeDirection.LEFT -> if (reversedDirections) onSwipeAccept(photo) else onSwipeReject(photo)
-            SwipeDirection.UP -> onSwipeUndo()
-            SwipeDirection.DOWN -> onSwipeSkip(photo)
+    // Every decision, from a swipe, a button or a key, goes through here so feedback is identical.
+    val perform: (SwipeCommand, PhotoItem) -> Unit = { command, photo ->
+        when (command) {
+            SwipeCommand.Keep -> onSwipeAccept(photo)
+            SwipeCommand.Reject -> onSwipeReject(photo)
+            SwipeCommand.Skip -> onSwipeSkip(photo)
+            SwipeCommand.Undo -> onSwipeUndo()
+            is SwipeCommand.Rate -> onRatePhoto(photo, command.stars)
         }
+        SwipeHaptics.perform(view, command)
     }
+    val decide: (SwipeDirection, PhotoItem) -> Unit = { direction, photo ->
+        val command = when (direction) {
+            SwipeDirection.RIGHT -> if (reversedDirections) SwipeCommand.Reject else SwipeCommand.Keep
+            SwipeDirection.LEFT -> if (reversedDirections) SwipeCommand.Keep else SwipeCommand.Reject
+            SwipeDirection.UP -> SwipeCommand.Undo
+            SwipeDirection.DOWN -> SwipeCommand.Skip
+        }
+        perform(command, photo)
+    }
+    // Hardware keys reach the screen only while it holds focus.
+    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
     val rightState = if (reversedDirections) SelectionState.REJECT else SelectionState.ACCEPT
     val leftState = if (reversedDirections) SelectionState.ACCEPT else SelectionState.REJECT
 
@@ -279,6 +306,18 @@ fun SwipeSelectionScreen(
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
+        modifier = Modifier
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val command = SwipeKeyMap.commandFor(event.key.nativeKeyCode, reversedDirections)
+                    ?: return@onPreviewKeyEvent false
+                // Holding a key must not fly through the folder.
+                val photo = currentPhoto
+                if (event.nativeKeyEvent.repeatCount == 0 && photo != null) perform(command, photo)
+                true
+            },
     ) { innerPadding ->
         BoxWithConstraints(
             modifier = Modifier
@@ -308,10 +347,20 @@ fun SwipeSelectionScreen(
                     leftState = leftState,
                     rightState = rightState,
                     vertical = vertical,
-                    onUndo = onSwipeUndo,
+                    onUndo = { perform(SwipeCommand.Undo, currentPhoto) },
                     onLeft = { decide(SwipeDirection.LEFT, currentPhoto) },
                     onRight = { decide(SwipeDirection.RIGHT, currentPhoto) },
-                    onPending = { onSwipeSkip(currentPhoto) },
+                    onPending = { perform(SwipeCommand.Skip, currentPhoto) },
+                )
+            }
+            val rating: @Composable () -> Unit = {
+                RatingBar(
+                    rating = currentPhoto.rating,
+                    onRatingChange = { onRatePhoto(currentPhoto, it) },
+                    inactiveColor = OmaiTheme.colors.textTertiary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentWidth(Alignment.CenterHorizontally),
                 )
             }
             if (landscape) {
@@ -319,6 +368,7 @@ fun SwipeSelectionScreen(
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                         ProgressHeader(currentIndex, totalCount, counts, reversedDirections, compact = true)
                         stage(Modifier.weight(1f))
+                        rating()
                     }
                     Box(Modifier.fillMaxHeight().widthIn(min = 96.dp), contentAlignment = Alignment.Center) {
                         actions(true)
@@ -328,6 +378,7 @@ fun SwipeSelectionScreen(
                 Column(Modifier.fillMaxSize()) {
                     ProgressHeader(currentIndex, totalCount, counts, reversedDirections)
                     stage(Modifier.weight(1f).padding(horizontal = Spacing.md))
+                    rating()
                     AnimatedVisibility(visible = currentIndex == 0 && counts.decided == 0) {
                         Text(
                             text = stringResource(R.string.swipe_hint),

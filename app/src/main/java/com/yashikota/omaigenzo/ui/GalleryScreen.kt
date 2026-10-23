@@ -1,8 +1,11 @@
 package com.yashikota.omaigenzo.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,10 +33,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.SelectAll
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Swipe
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -47,6 +54,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -62,10 +70,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -98,8 +109,17 @@ fun GalleryScreen(
     onExportClick: () -> Unit = {},
     onExportAcceptPhotos: () -> Unit = onExportClick,
     isExporting: Boolean = false,
+    onSelectionChangedForMany: (Set<String>, SelectionState) -> Unit = { ids, state -> ids.forEach { onSelectionChanged(it, state) } },
+    onRatePhoto: (String, Int) -> Unit = { _, _ -> },
+    onStartSelectionAt: (String) -> Unit = {},
+    onShareKept: () -> Unit = {},
 ) {
     var selectedFilter by rememberSaveable { mutableStateOf(FilterCategory.ALL) }
+    // Long-press starts multi-select; while anything is selected, taps toggle instead of opening.
+    var multiSelection by remember { mutableStateOf(emptySet<String>()) }
+    val inSelectionMode = multiSelection.isNotEmpty()
+    val haptics = LocalHapticFeedback.current
+    BackHandler(enabled = inSelectionMode) { multiSelection = emptySet() }
     // The detail viewer pages through the list as it was when opened, so changing a photo's state
     // there does not yank it out from under the viewer.
     var detailIds by remember { mutableStateOf<List<String>?>(null) }
@@ -126,38 +146,53 @@ fun GalleryScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(stringResource(R.string.gallery_title), style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = stringResource(R.string.count_photos, photos.size),
-                            style = MaterialTheme.typography.bodySmall.tabular(),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackToSwipe) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.action_back))
-                    }
-                },
-                actions = {
-                    FilledTonalButton(
-                        onClick = { if (!isExporting) onExportAcceptPhotos() },
-                        enabled = keepCount > 0,
-                        contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
-                        modifier = Modifier.padding(end = Spacing.sm),
-                    ) {
-                        ButtonContent(
-                            text = stringResource(if (isExporting) R.string.gallery_exporting else R.string.gallery_export),
-                            icon = Icons.Rounded.Download,
-                            loading = isExporting,
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
+            if (inSelectionMode) {
+                SelectionTopBar(
+                    count = multiSelection.size,
+                    onClear = { multiSelection = emptySet() },
+                    onSelectAll = { multiSelection = filteredPhotos.mapTo(HashSet()) { it.id } },
+                    onApply = { state ->
+                        onSelectionChangedForMany(multiSelection, state)
+                        multiSelection = emptySet()
+                    },
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(stringResource(R.string.gallery_title), style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = stringResource(R.string.count_photos, photos.size),
+                                style = MaterialTheme.typography.bodySmall.tabular(),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBackToSwipe) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onShareKept, enabled = keepCount > 0) {
+                            Icon(Icons.Rounded.Share, contentDescription = stringResource(R.string.share_kept))
+                        }
+                        FilledTonalButton(
+                            onClick = { if (!isExporting) onExportAcceptPhotos() },
+                            enabled = keepCount > 0,
+                            contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
+                            modifier = Modifier.padding(end = Spacing.sm),
+                        ) {
+                            ButtonContent(
+                                text = stringResource(if (isExporting) R.string.gallery_exporting else R.string.gallery_export),
+                                icon = Icons.Rounded.Download,
+                                loading = isExporting,
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                )
+            }
         },
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
@@ -207,12 +242,22 @@ fun GalleryScreen(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(filteredPhotos, key = { it.id }) { photo ->
+                        val isSelected = photo.id in multiSelection
                         GalleryItemCard(
                             photoItem = photo,
                             libRawBridge = libRawBridge,
+                            isSelected = isSelected,
                             onClick = {
-                                detailIds = filteredPhotos.map { it.id }
-                                detailIndex = filteredPhotos.indexOf(photo).coerceAtLeast(0)
+                                if (inSelectionMode) {
+                                    multiSelection = if (isSelected) multiSelection - photo.id else multiSelection + photo.id
+                                } else {
+                                    detailIds = filteredPhotos.map { it.id }
+                                    detailIndex = filteredPhotos.indexOf(photo).coerceAtLeast(0)
+                                }
+                            },
+                            onLongClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                multiSelection = if (isSelected) multiSelection - photo.id else multiSelection + photo.id
                             },
                         )
                     }
@@ -235,6 +280,11 @@ fun GalleryScreen(
                     onPrevious = { detailIndex = (detailIndex - 1).coerceAtLeast(0) },
                     onNext = { detailIndex = (detailIndex + 1).coerceAtMost(ids.lastIndex) },
                     onStateChange = { onPhotoSelectionChanged(photo, it) },
+                    onRatingChange = { onRatePhoto(photo.id, it) },
+                    onStartSelection = {
+                        detailIds = null
+                        onStartSelectionAt(photo.id)
+                    },
                 )
             }
         }
@@ -309,11 +359,51 @@ private fun GalleryEmpty(filter: FilterCategory) {
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionTopBar(
+    count: Int,
+    onClear: () -> Unit,
+    onSelectAll: () -> Unit,
+    onApply: (SelectionState) -> Unit,
+) {
+    TopAppBar(
+        title = {
+            Text(
+                text = stringResource(R.string.gallery_selected_count, count),
+                style = MaterialTheme.typography.titleMedium.tabular(),
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onClear) {
+                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.gallery_clear_selection))
+            }
+        },
+        actions = {
+            IconButton(onClick = onSelectAll) {
+                Icon(Icons.Rounded.SelectAll, contentDescription = stringResource(R.string.gallery_select_all))
+            }
+            for (state in listOf(SelectionState.ACCEPT, SelectionState.PENDING, SelectionState.REJECT)) {
+                val description = stringResource(R.string.gallery_apply_to_selection, state.label())
+                IconButton(onClick = { onApply(state) }) {
+                    Icon(state.icon(), contentDescription = description, tint = OmaiTheme.colors.forState(state))
+                }
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GalleryItemCard(
     photoItem: PhotoItem,
     libRawBridge: LibRawBridge,
     onClick: () -> Unit,
+    isSelected: Boolean = false,
+    onLongClick: () -> Unit = {},
 ) {
     var thumbnail by remember(photoItem.id, photoItem.modifiedAt) {
         mutableStateOf(
@@ -339,13 +429,22 @@ private fun GalleryItemCard(
 
     val state = photoItem.selectionState
     val description = stringResource(R.string.photo_state_description, photoItem.displayFileName, state.label())
+    val longPressLabel = stringResource(R.string.gallery_multi_select)
     Box(
         modifier = Modifier
             .aspectRatio(1f)
             .clip(MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = description },
+            .combinedClickable(
+                role = Role.Button,
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onLongClickLabel = longPressLabel,
+            )
+            .semantics {
+                contentDescription = description
+                selected = isSelected
+            },
     ) {
         val shown = thumbnail
         if (shown != null) {
@@ -378,6 +477,34 @@ private fun GalleryItemCard(
                     .padding(6.dp),
             )
         }
+
+        RatingBadge(
+            rating = photoItem.rating,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(6.dp),
+        )
+
+        if (isSelected) {
+            val accent = MaterialTheme.colorScheme.primary
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(accent.copy(alpha = 0.24f))
+                    .border(3.dp, accent, MaterialTheme.shapes.small),
+            )
+            Icon(
+                imageVector = Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onPrimary),
+            )
+        }
     }
 }
 
@@ -392,6 +519,8 @@ private fun PhotoDetailDialog(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onStateChange: (SelectionState) -> Unit,
+    onRatingChange: (Int) -> Unit,
+    onStartSelection: () -> Unit,
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -430,7 +559,12 @@ private fun PhotoDetailDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Spacer(Modifier.width(Spacing.sm))
+                    TextButton(onClick = onStartSelection) {
+                        Icon(Icons.Rounded.Swipe, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(Spacing.xs))
+                        Text(stringResource(R.string.gallery_start_here))
+                    }
+                    Spacer(Modifier.width(Spacing.xs))
                 }
 
                 Box(
@@ -461,11 +595,21 @@ private fun PhotoDetailDialog(
                     )
                 }
 
+                RatingBar(
+                    rating = photo.rating,
+                    onRatingChange = onRatingChange,
+                    starSize = 28.dp,
+                    inactiveColor = OmaiTheme.colors.textTertiary,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = Spacing.sm),
+                )
+
                 val options = listOf(SelectionState.ACCEPT, SelectionState.PENDING, SelectionState.REJECT)
                 SingleChoiceSegmentedButtonRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(Spacing.lg),
+                        .padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.lg, top = Spacing.sm),
                 ) {
                     options.forEachIndexed { index, option ->
                         SegmentedButton(

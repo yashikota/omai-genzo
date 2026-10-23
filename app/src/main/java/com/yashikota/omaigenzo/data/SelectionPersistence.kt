@@ -1,5 +1,6 @@
 package com.yashikota.omaigenzo.data
 
+import com.yashikota.omaigenzo.PhotoItem
 import com.yashikota.omaigenzo.SelectionState
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -41,6 +42,27 @@ object SelectionCodec {
                 else -> return null
             }
         }
+    }
+}
+
+/** One digit per photo, in list order, '0' (unrated) to '5'. Stored next to [SelectionCodec]. */
+object RatingCodec {
+    fun encode(ratings: List<Int>): String {
+        val chars = CharArray(ratings.size)
+        for (i in chars.indices) chars[i] = '0' + ratings[i].coerceIn(0, PhotoItem.MAX_RATING)
+        return String(chars)
+    }
+
+    /** Returns null when the snapshot does not describe exactly [expectedSize] photos. */
+    fun decode(encoded: String, expectedSize: Int): IntArray? {
+        if (encoded.length != expectedSize) return null
+        val ratings = IntArray(expectedSize)
+        for (i in 0 until expectedSize) {
+            val value = encoded[i] - '0'
+            if (value !in 0..PhotoItem.MAX_RATING) return null
+            ratings[i] = value
+        }
+        return ratings
     }
 }
 

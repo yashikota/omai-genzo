@@ -7,6 +7,7 @@ import com.yashikota.omaigenzo.FolderImportManager
 import com.yashikota.omaigenzo.PhotoItem
 import com.yashikota.omaigenzo.PhotoType
 import com.yashikota.omaigenzo.SelectionState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +26,7 @@ class LocalPhotoRepository(
     private companion object {
         const val KEY_PHOTOS = "photos"
         const val KEY_SELECTION = "selection"
+        const val KEY_RATING = "rating"
         const val KEY_SESSION_TOKEN = "session_token"
         const val MAX_UNDO_DEPTH = 1_024
     }
@@ -58,9 +60,11 @@ class LocalPhotoRepository(
             // A snapshot taken before an import or reset must not resurrect the old session.
             if (pending.generation == sessionGeneration) {
                 val encoded = SelectionCodec.encode(pending.photos.map { it.selectionState })
+                val ratings = RatingCodec.encode(pending.photos.map { it.rating })
                 selectionPreferences.edit {
                     putLong(KEY_SESSION_TOKEN, sessionToken)
                     putString(KEY_SELECTION, encoded)
+                    putString(KEY_RATING, ratings)
                 }
             }
         }
@@ -90,6 +94,16 @@ class LocalPhotoRepository(
         if (store.update(photoId, state)) publishSelection()
     }
 
+    override fun updateRating(photoId: String, rating: Int) {
+        if (store.updateRating(photoId, rating)) publishSelection()
+    }
+
+    override fun updateSelections(photoIds: Collection<String>, state: SelectionState): Int {
+        val changed = store.updateMany(photoIds, state)
+        if (changed > 0) publishSelection()
+        return changed
+    }
+
     override fun undoLastSelection(): Boolean {
         if (!store.undo()) return false
         publishSelection()
@@ -110,6 +124,25 @@ class LocalPhotoRepository(
         } else {
             Result.success(count)
         }
+    } catch (e: Exception) {
+        PerfLogger.event("export_error", "\"error\":\"${PerfLogger.escape(e.stackTraceToString())}\"")
+        Result.failure(e)
+    }
+
+    override suspend fun exportAcceptedPhotos(
+        outputUri: Uri,
+        options: ExportOptions,
+        onProgress: (ExportProgress) -> Unit,
+    ): Result<ExportReport> = try {
+        val entries = ExportPlanner.plan(photosState.value, options)
+        val report = importManager.exportToUri(outputUri, entries, options.skipExisting, onProgress)
+        if (!report.cancelled && entries.isNotEmpty() && report.exportedPhotos == 0) {
+            Result.failure(IllegalStateException("写真を1件も保存できませんでした"))
+        } else {
+            Result.success(report)
+        }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         PerfLogger.event("export_error", "\"error\":\"${PerfLogger.escape(e.stackTraceToString())}\"")
         Result.failure(e)
@@ -158,6 +191,7 @@ class LocalPhotoRepository(
         selectionPreferences.edit {
             putLong(KEY_SESSION_TOKEN, token)
             putString(KEY_SELECTION, SelectionCodec.encode(photos.map { it.selectionState }))
+            putString(KEY_RATING, RatingCodec.encode(photos.map { it.rating }))
         }
     }
 
@@ -182,6 +216,7 @@ class LocalPhotoRepository(
             )
         }
         sessionToken = preferences.getLong(KEY_SESSION_TOKEN, 0L)
+        val snapshotIsCurrent = selectionPreferences.getLong(KEY_SESSION_TOKEN, 0L) == sessionToken
         // Sessions older than the compact snapshot keep their per-item state.
         val encoded = SelectionCodec.pickSnapshot(
             sessionToken = sessionToken,
@@ -190,7 +225,21 @@ class LocalPhotoRepository(
             legacySnapshot = preferences.getString(KEY_SELECTION, null),
         )
         val snapshot = encoded?.let { SelectionCodec.decode(it, items.size) }
-        if (snapshot == null) items else items.mapIndexed { i, item -> item.copy(selectionState = snapshot[i]) }
+        val ratings = if (snapshotIsCurrent) {
+            selectionPreferences.getString(KEY_RATING, null)?.let { RatingCodec.decode(it, items.size) }
+        } else {
+            null
+        }
+        if (snapshot == null && ratings == null) {
+            items
+        } else {
+            items.mapIndexed { i, item ->
+                item.copy(
+                    selectionState = snapshot?.get(i) ?: item.selectionState,
+                    rating = ratings?.get(i) ?: item.rating,
+                )
+            }
+        }
     } catch (_: Exception) {
         emptyList()
     }

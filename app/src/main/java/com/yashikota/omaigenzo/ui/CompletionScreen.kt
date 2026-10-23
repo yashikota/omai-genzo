@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
@@ -82,6 +83,7 @@ fun CompletionScreen(
     onExportAcceptPhotos: () -> Unit = onExportClick,
     onResumePending: () -> Unit = {},
     isExporting: Boolean = false,
+    onShareKept: () -> Unit = {},
 ) {
     val summary = remember(photos) { SessionSummary.of(photos) }
     val totalCount = summary.totalCount
@@ -197,6 +199,12 @@ fun CompletionScreen(
                         shape = MaterialTheme.shapes.medium,
                     ) {
                         ButtonContent(stringResource(R.string.done_open_gallery), Icons.Rounded.GridView)
+                    }
+                    if (acceptCount > 0) {
+                        Spacer(Modifier.height(Spacing.sm))
+                        TextButton(onClick = onShareKept) {
+                            ButtonContent(stringResource(R.string.share_kept_list), Icons.Rounded.Share)
+                        }
                     }
                     Spacer(Modifier.height(Spacing.lg))
                     TextButton(onClick = { confirmReset = true }) {
