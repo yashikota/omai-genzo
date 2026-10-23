@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.sp
 import com.yashikota.omaigenzo.DecodePriority
 import com.yashikota.omaigenzo.LibRawBridge
 import com.yashikota.omaigenzo.PhotoItem
-import com.yashikota.omaigenzo.SelectionState
+import com.yashikota.omaigenzo.SessionSummary
 import com.yashikota.omaigenzo.data.PrefetchCoordinator
 import com.yashikota.omaigenzo.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -67,18 +67,9 @@ fun SwipeSelectionScreen(
     val currentPhoto = photos.getOrNull(currentIndex)
 
     // Recomputed when the list changes (once per swipe), never per drag frame.
-    val (acceptCount, rejectCount) = remember(photos) {
-        var accepted = 0
-        var rejected = 0
-        for (photo in photos) {
-            when (photo.selectionState) {
-                SelectionState.ACCEPT -> accepted++
-                SelectionState.REJECT -> rejected++
-                SelectionState.PENDING -> Unit
-            }
-        }
-        accepted to rejected
-    }
+    val summary = remember(photos) { SessionSummary.of(photos) }
+    val acceptCount = summary.acceptCount
+    val rejectCount = summary.rejectCount
     val totalCount = photos.size
 
     LaunchedEffect(currentIndex, photos.size) {

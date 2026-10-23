@@ -29,6 +29,7 @@ import com.yashikota.omaigenzo.FilterCategory
 import com.yashikota.omaigenzo.LibRawBridge
 import com.yashikota.omaigenzo.PhotoItem
 import com.yashikota.omaigenzo.SelectionState
+import com.yashikota.omaigenzo.SessionSummary
 import com.yashikota.omaigenzo.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,6 +47,7 @@ fun GalleryScreen(
     var selectedFilter by remember { mutableStateOf(FilterCategory.ALL) }
     var selectedPhotoForDetail by remember { mutableStateOf<PhotoItem?>(null) }
 
+    val summary = remember(photos) { SessionSummary.of(photos) }
     val filteredPhotos = remember(photos, selectedFilter) {
         when (selectedFilter) {
             FilterCategory.ALL -> photos
@@ -96,10 +98,10 @@ fun GalleryScreen(
             ) {
                 FilterCategory.values().forEach { category ->
                     val count = when (category) {
-                        FilterCategory.ALL -> photos.size
-                        FilterCategory.ACCEPT -> photos.count { it.selectionState == SelectionState.ACCEPT }
-                        FilterCategory.REJECT -> photos.count { it.selectionState == SelectionState.REJECT }
-                        FilterCategory.PENDING -> photos.count { it.selectionState == SelectionState.PENDING }
+                        FilterCategory.ALL -> summary.totalCount
+                        FilterCategory.ACCEPT -> summary.acceptCount
+                        FilterCategory.REJECT -> summary.rejectCount
+                        FilterCategory.PENDING -> summary.pendingCount
                     }
                     Tab(
                         selected = selectedFilter == category,

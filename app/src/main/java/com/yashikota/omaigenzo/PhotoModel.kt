@@ -64,4 +64,20 @@ data class SessionSummary(
 
     val rejectPercentage: Int
         get() = if (totalCount > 0) (rejectCount * 100) / totalCount else 0
+
+    companion object {
+        /** One pass over the session, instead of one `count {}` per state on every recomposition. */
+        fun of(photos: List<PhotoItem>): SessionSummary {
+            var accepted = 0
+            var rejected = 0
+            for (photo in photos) {
+                when (photo.selectionState) {
+                    SelectionState.ACCEPT -> accepted++
+                    SelectionState.REJECT -> rejected++
+                    SelectionState.PENDING -> Unit
+                }
+            }
+            return SessionSummary(photos.size, accepted, rejected, photos.size - accepted - rejected)
+        }
+    }
 }

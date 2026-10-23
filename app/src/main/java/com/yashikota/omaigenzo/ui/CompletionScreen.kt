@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -19,7 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yashikota.omaigenzo.PhotoItem
-import com.yashikota.omaigenzo.SelectionState
+import com.yashikota.omaigenzo.SessionSummary
 import com.yashikota.omaigenzo.ui.theme.*
 
 @Composable
@@ -33,11 +34,12 @@ fun CompletionScreen(
     onExportAcceptPhotos: () -> Unit = onExportClick,
     onResumePending: () -> Unit = {},
 ) {
-    val totalCount = photos.size
-    val acceptCount = photos.count { it.selectionState == SelectionState.ACCEPT }
-    val rejectCount = photos.count { it.selectionState == SelectionState.REJECT }
-    val pendingCount = photos.count { it.selectionState == SelectionState.PENDING }
-    val acceptPercentage = if (totalCount > 0) (acceptCount * 100) / totalCount else 0
+    val summary = remember(photos) { SessionSummary.of(photos) }
+    val totalCount = summary.totalCount
+    val acceptCount = summary.acceptCount
+    val rejectCount = summary.rejectCount
+    val pendingCount = summary.pendingCount
+    val acceptPercentage = summary.acceptPercentage
 
     Scaffold(
         containerColor = DarkBackground,

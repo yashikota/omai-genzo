@@ -2,9 +2,11 @@ package com.yashikota.omaigenzo
 
 import android.content.Context
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import com.yashikota.omaigenzo.data.FileCopy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.UUID
 
@@ -228,16 +231,20 @@ class FolderImportManager(val context: Context) {
         if (path == null && uriString == null) return false
         return try {
             val newDoc = targetDoc.createFile(mimeType, fileName) ?: return false
-            val output = context.contentResolver.openOutputStream(newDoc.uri) ?: return false
-            output.use { destination ->
+            // Descriptors rather than streams, so FileCopy can hand the copy to the kernel.
+            val target = context.contentResolver.openFileDescriptor(newDoc.uri, "w") ?: return false
+            val copied = ParcelFileDescriptor.AutoCloseOutputStream(target).use { destination ->
                 when {
-                    path != null -> File(path).takeIf(File::exists)?.inputStream()?.use { it.copyTo(destination) }
-                        ?: return false
-                    uriString != null -> context.contentResolver.openInputStream(uriString.toUri())?.use { it.copyTo(destination) }
-                        ?: return false
+                    path != null -> File(path).takeIf(File::exists)?.let { file ->
+                        FileInputStream(file).use { FileCopy.copy(it, destination) }
+                    }
+                    uriString != null -> context.contentResolver.openFileDescriptor(uriString.toUri(), "r")?.let { source ->
+                        ParcelFileDescriptor.AutoCloseInputStream(source).use { FileCopy.copy(it, destination) }
+                    }
+                    else -> null
                 }
             }
-            true
+            copied != null
         } catch (e: Exception) {
             Log.e(TAG, "Failed to export $fileName: ${e.message}")
             false
