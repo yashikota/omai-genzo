@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <memory>
 #include <android/log.h>
 #include <android/bitmap.h>
 #include <android/native_window_jni.h>
@@ -9,6 +10,7 @@
 #include "FastGpuEngine.h"
 #include "JpegProbe.h"
 #include "RawFileView.h"
+#include "RgbPack.h"
 
 #define LOG_TAG "NativeLibRaw"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -32,6 +34,10 @@ struct PreviewHandle {
     RawFileView view;
     std::vector<uint8_t> ownedJpeg;
 };
+
+// sizeof(LibRaw) is ~750 KB. On the stack it took most of a 1 MB Java thread stack (coroutine IO
+// threads) before LibRaw's own call depth was added, so it always lives on the heap.
+std::unique_ptr<LibRaw> makeLibRaw() { return std::unique_ptr<LibRaw>(new (std::nothrow) LibRaw()); }
 
 jobject createArgbBitmap(JNIEnv *env, int width, int height) {
     if (!gBitmap.bitmapClass) return nullptr;
@@ -67,7 +73,12 @@ Java_com_yashikota_omaigenzo_LibRawBridge_getLibRawVersion(JNIEnv *env, jobject 
 JNIEXPORT jstring JNICALL
 Java_com_yashikota_omaigenzo_LibRawBridge_getMetadata(JNIEnv *env, jobject thiz, jstring file_path) {
     const char *path = env->GetStringUTFChars(file_path, nullptr);
-    LibRaw raw;
+    auto rawHolder = makeLibRaw();
+    if (!rawHolder) {
+        env->ReleaseStringUTFChars(file_path, path);
+        return env->NewStringUTF("{}");
+    }
+    LibRaw &raw = *rawHolder;
 
     int ret = raw.open_file(path);
     if (ret != LIBRAW_SUCCESS) {
@@ -119,7 +130,12 @@ Java_com_yashikota_omaigenzo_LibRawBridge_openEmbeddedPreviews(JNIEnv *env, jobj
     int rawFlip = 0;
 
     {
-        LibRaw raw;
+        auto rawHolder = makeLibRaw();
+        if (!rawHolder) {
+            delete handle;
+            return nullptr;
+        }
+        LibRaw &raw = *rawHolder;
         if (raw.open_buffer(handle->view.data(), handle->view.size()) != LIBRAW_SUCCESS) {
             delete handle;
             return nullptr;
@@ -191,12 +207,16 @@ Java_com_yashikota_omaigenzo_LibRawBridge_closeView(JNIEnv *env, jobject thiz, j
 }
 
 // Last resort: reduced (half_size) or full RAW development straight from the descriptor.
+// [max_dimension] > 0 averages the result down to that long edge (power-of-two steps) while it is
+// packed into the bitmap, so the fallback costs about as much cache as an embedded JPEG would.
 JNIEXPORT jobject JNICALL
-Java_com_yashikota_omaigenzo_LibRawBridge_decodeRawFromFd(JNIEnv *env, jobject thiz, jint fd, jboolean half_size) {
+Java_com_yashikota_omaigenzo_LibRawBridge_decodeRawFromFd(JNIEnv *env, jobject thiz, jint fd, jboolean half_size, jint max_dimension) {
     RawFileView view;
     if (!view.open(fd, RawFileView::Access::Sequential)) return nullptr;
 
-    LibRaw raw;
+    auto rawHolder = makeLibRaw();
+    if (!rawHolder) return nullptr;
+    LibRaw &raw = *rawHolder;
     if (raw.open_buffer(view.data(), view.size()) != LIBRAW_SUCCESS) {
         LOGE("decodeRawFromFd: open_buffer failed");
         return nullptr;
@@ -224,9 +244,12 @@ Java_com_yashikota_omaigenzo_LibRawBridge_decodeRawFromFd(JNIEnv *env, jobject t
         LibRaw::dcraw_clear_mem(img);
         return nullptr;
     }
+    // The working buffers of LibRaw (several times the output size) are not needed any more.
+    raw.recycle();
 
-    const int width = img->width;
-    const int height = img->height;
+    const int factor = omaigenzo::sampleFactor(img->width, img->height, max_dimension);
+    const int width = omaigenzo::scaledEdge(img->width, factor);
+    const int height = omaigenzo::scaledEdge(img->height, factor);
     jobject bitmap = createArgbBitmap(env, width, height);
     if (env->ExceptionCheck()) {  // OutOfMemoryError: report "no bitmap" instead of crashing the caller
         env->ExceptionClear();
@@ -241,18 +264,10 @@ Java_com_yashikota_omaigenzo_LibRawBridge_decodeRawFromFd(JNIEnv *env, jobject t
         return nullptr;
     }
 
-    for (int y = 0; y < height; y++) {
-        const uint8_t *src = img->data + static_cast<size_t>(y) * width * 3;
-        auto *dst = reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(pixels) + static_cast<size_t>(y) * info.stride);
-        for (int x = 0; x < width; x++) {
-            // ARGB_8888 is ABGR in memory on little-endian ARM/x86.
-            dst[x] = 0xFF000000u | (static_cast<uint32_t>(src[x * 3 + 2]) << 16) |
-                     (static_cast<uint32_t>(src[x * 3 + 1]) << 8) | src[x * 3 + 0];
-        }
-    }
+    omaigenzo::packRgbToArgb(img->data, img->width, img->height, factor, static_cast<uint8_t *>(pixels), info.stride);
     AndroidBitmap_unlockPixels(env, bitmap);
+    LOGI("Developed RAW from fd: %dx%d -> %dx%d (half=%d)", img->width, img->height, width, height, half_size ? 1 : 0);
     LibRaw::dcraw_clear_mem(img);
-    LOGI("Developed RAW from fd: %dx%d (half=%d)", width, height, half_size ? 1 : 0);
     return bitmap;
 }
 
