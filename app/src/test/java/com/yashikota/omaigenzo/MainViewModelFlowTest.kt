@@ -141,7 +141,7 @@ class MainViewModelFlowTest {
         act(MainUiAction.SelectFolder(folder))
 
         assertEquals(ScreenState.FOLDER_SELECT, state.currentScreen)
-        assertEquals("対応する写真が見つかりませんでした", state.errorMessage)
+        assertEquals("このフォルダに対応する写真（RAW・JPEG）が見つかりませんでした", state.errorMessage)
         assertFalse(state.isImporting)
     }
 
@@ -152,7 +152,7 @@ class MainViewModelFlowTest {
 
         act(MainUiAction.SelectFolder(folder))
 
-        assertEquals("フォルダの取り込みに失敗しました: permission revoked", state.errorMessage)
+        assertEquals("フォルダを読み込めませんでした（permission revoked）", state.errorMessage)
         assertFalse(state.isImporting)
         assertEquals(2, state.totalCount)
         assertEquals(ScreenState.SWIPE_SELECTION, state.currentScreen)
@@ -191,7 +191,7 @@ class MainViewModelFlowTest {
         act(MainUiAction.ExportAcceptedPhotos(output))
 
         assertEquals(listOf(output), repository.exportTargets)
-        assertEquals("3 件のキープ写真を保存しました！", state.exportSuccessMessage)
+        assertEquals("キープした 3 枚を書き出しました", state.exportSuccessMessage)
         assertFalse(state.isExporting)
         assertNull(state.errorMessage)
     }
@@ -218,7 +218,7 @@ class MainViewModelFlowTest {
 
         act(MainUiAction.ExportAcceptedPhotos(output))
 
-        assertEquals("書き出しに失敗しました: disk full", state.errorMessage)
+        assertEquals("書き出せませんでした（disk full）", state.errorMessage)
         assertNull(state.exportSuccessMessage)
         assertFalse(state.isExporting)
     }
