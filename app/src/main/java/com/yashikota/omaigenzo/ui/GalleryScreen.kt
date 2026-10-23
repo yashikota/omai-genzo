@@ -2,35 +2,90 @@ package com.yashikota.omaigenzo.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.yashikota.omaigenzo.FilterCategory
 import com.yashikota.omaigenzo.LibRawBridge
 import com.yashikota.omaigenzo.PhotoItem
+import com.yashikota.omaigenzo.R
 import com.yashikota.omaigenzo.SelectionState
-import com.yashikota.omaigenzo.SessionSummary
-import com.yashikota.omaigenzo.ui.theme.*
+import com.yashikota.omaigenzo.ui.components.ButtonContent
+import com.yashikota.omaigenzo.ui.components.EmptyState
+import com.yashikota.omaigenzo.ui.components.SelectionStateBadge
+import com.yashikota.omaigenzo.ui.components.icon
+import com.yashikota.omaigenzo.ui.components.label
+import com.yashikota.omaigenzo.ui.theme.OmaiTheme
+import com.yashikota.omaigenzo.ui.theme.Spacing
+import com.yashikota.omaigenzo.ui.theme.tabular
+
+private const val GALLERY_THUMBNAIL_TARGET = 512
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,12 +97,23 @@ fun GalleryScreen(
     onPhotoSelectionChanged: (PhotoItem, SelectionState) -> Unit = { photo, state -> onSelectionChanged(photo.id, state) },
     onExportClick: () -> Unit = {},
     onExportAcceptPhotos: () -> Unit = onExportClick,
+    isExporting: Boolean = false,
 ) {
-    val context = LocalContext.current
-    var selectedFilter by remember { mutableStateOf(FilterCategory.ALL) }
-    var selectedPhotoForDetail by remember { mutableStateOf<PhotoItem?>(null) }
+    var selectedFilter by rememberSaveable { mutableStateOf(FilterCategory.ALL) }
+    // The detail viewer pages through the list as it was when opened, so changing a photo's state
+    // there does not yank it out from under the viewer.
+    var detailIds by remember { mutableStateOf<List<String>?>(null) }
+    var detailIndex by remember { mutableStateOf(0) }
 
-    val summary = remember(photos) { SessionSummary.of(photos) }
+    val counts = remember(photos) {
+        val byState = photos.groupingBy { it.selectionState }.eachCount()
+        mapOf(
+            FilterCategory.ALL to photos.size,
+            FilterCategory.ACCEPT to (byState[SelectionState.ACCEPT] ?: 0),
+            FilterCategory.REJECT to (byState[SelectionState.REJECT] ?: 0),
+            FilterCategory.PENDING to (byState[SelectionState.PENDING] ?: 0),
+        )
+    }
     val filteredPhotos = remember(photos, selectedFilter) {
         when (selectedFilter) {
             FilterCategory.ALL -> photos
@@ -56,178 +122,191 @@ fun GalleryScreen(
             FilterCategory.PENDING -> photos.filter { it.selectionState == SelectionState.PENDING }
         }
     }
+    val keepCount = counts[FilterCategory.ACCEPT] ?: 0
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "選別結果ギャラリー",
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                    )
+                    Column {
+                        Text(stringResource(R.string.gallery_title), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = stringResource(R.string.count_photos, photos.size),
+                            style = MaterialTheme.typography.bodySmall.tabular(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackToSwipe) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る", tint = PrimaryNeon)
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
                 actions = {
-                    IconButton(onClick = onExportAcceptPhotos) {
-                        Icon(imageVector = Icons.Default.Download, contentDescription = "書き出し", tint = AcceptGreen)
+                    FilledTonalButton(
+                        onClick = { if (!isExporting) onExportAcceptPhotos() },
+                        enabled = keepCount > 0,
+                        contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
+                        modifier = Modifier.padding(end = Spacing.sm),
+                    ) {
+                        ButtonContent(
+                            text = stringResource(if (isExporting) R.string.gallery_exporting else R.string.gallery_export),
+                            icon = Icons.Rounded.Download,
+                            loading = isExporting,
+                        )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
-        containerColor = DarkBackground,
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.safeDrawing,
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 12.dp),
+                .padding(top = innerPadding.calculateTopPadding()),
         ) {
-            // Filter Tab Bar
-            ScrollableTabRow(
-                selectedTabIndex = selectedFilter.ordinal,
-                containerColor = DarkBackground,
-                contentColor = PrimaryNeon,
-                edgePadding = 0.dp,
-                divider = {},
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                FilterCategory.values().forEach { category ->
-                    val count = when (category) {
-                        FilterCategory.ALL -> summary.totalCount
-                        FilterCategory.ACCEPT -> summary.acceptCount
-                        FilterCategory.REJECT -> summary.rejectCount
-                        FilterCategory.PENDING -> summary.pendingCount
-                    }
-                    Tab(
+                FilterCategory.entries.forEach { category ->
+                    FilterTab(
+                        category = category,
+                        count = counts[category] ?: 0,
                         selected = selectedFilter == category,
                         onClick = { selectedFilter = category },
-                        text = {
-                            Text(
-                                text = "${category.name} ($count)",
-                                fontWeight = if (selectedFilter == category) FontWeight.Bold else FontWeight.Normal,
-                            )
-                        },
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Photo Grid
             if (filteredPhotos.isEmpty()) {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.navigationBars),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(text = "該当する写真がありません", color = TextSecondary, fontSize = 14.sp)
+                    GalleryEmpty(selectedFilter)
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 110.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    columns = GridCells.Adaptive(minSize = 112.dp),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    contentPadding = PaddingValues(
+                        start = Spacing.md,
+                        end = Spacing.md,
+                        top = Spacing.sm,
+                        bottom = Spacing.xl + innerPadding.calculateBottomPadding(),
+                    ),
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(filteredPhotos, key = { it.id }) { photo ->
                         GalleryItemCard(
                             photoItem = photo,
                             libRawBridge = libRawBridge,
-                            onClick = { selectedPhotoForDetail = photo },
+                            onClick = {
+                                detailIds = filteredPhotos.map { it.id }
+                                detailIndex = filteredPhotos.indexOf(photo).coerceAtLeast(0)
+                            },
                         )
                     }
                 }
             }
         }
 
-        // Full Detail Modal Lightbox
-        if (selectedPhotoForDetail != null) {
-            val photo = selectedPhotoForDetail!!
-            AlertDialog(
-                onDismissRequest = { selectedPhotoForDetail = null },
-                confirmButton = {
-                    TextButton(onClick = { selectedPhotoForDetail = null }) {
-                        Text("閉じる", color = PrimaryNeon)
-                    }
-                },
-                title = {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(text = photo.displayFileName, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text(text = photo.displayBadge, fontSize = 12.sp, color = PrimaryNeon, fontWeight = FontWeight.Bold)
-                    }
-                },
-                text = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(300.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(DarkSurfaceVariant),
-                        ) {
-                            PhotoCardView(
-                                photoItem = photo,
-                                libRawBridge = libRawBridge,
-                                showExifOverlay = true,
-                                targetMaxDimension = 2048,
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                        ) {
-                            Button(
-                                onClick = {
-                                    onPhotoSelectionChanged(photo, SelectionState.ACCEPT)
-                                    selectedPhotoForDetail = photo.copy(selectionState = SelectionState.ACCEPT)
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (photo.selectionState == SelectionState.ACCEPT) AcceptGreen else DarkSurface,
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                            ) {
-                                Text(
-                                    text = "キープ",
-                                    color = if (photo.selectionState == SelectionState.ACCEPT) DarkBackground else AcceptGreen,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-
-                            Button(
-                                onClick = {
-                                    onPhotoSelectionChanged(photo, SelectionState.REJECT)
-                                    selectedPhotoForDetail = photo.copy(selectionState = SelectionState.REJECT)
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (photo.selectionState == SelectionState.REJECT) RejectRed else DarkSurface,
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                            ) {
-                                Text(
-                                    text = "破棄",
-                                    color = if (photo.selectionState == SelectionState.REJECT) TextPrimary else RejectRed,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                        }
-                    }
-                },
-                containerColor = DarkSurface,
-                shape = RoundedCornerShape(16.dp),
-            )
+        val ids = detailIds
+        if (ids != null) {
+            val photo = photos.firstOrNull { it.id == ids.getOrNull(detailIndex) }
+            if (photo == null) {
+                LaunchedEffect(Unit) { detailIds = null }
+            } else {
+                PhotoDetailDialog(
+                    photo = photo,
+                    position = detailIndex + 1,
+                    total = ids.size,
+                    libRawBridge = libRawBridge,
+                    onDismiss = { detailIds = null },
+                    onPrevious = { detailIndex = (detailIndex - 1).coerceAtLeast(0) },
+                    onNext = { detailIndex = (detailIndex + 1).coerceAtMost(ids.lastIndex) },
+                    onStateChange = { onPhotoSelectionChanged(photo, it) },
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun FilterTab(
+    category: FilterCategory,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val state = category.toState()
+    val dotColor = state?.let { OmaiTheme.colors.forState(it) }
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
+            Text(
+                text = (state?.label() ?: stringResource(R.string.gallery_filter_all)) + " " + count,
+                style = MaterialTheme.typography.labelLarge.tabular(),
+            )
+        },
+        leadingIcon = if (dotColor != null) {
+            {
+                Box(
+                    Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(dotColor),
+                )
+            }
+        } else {
+            null
+        },
+        shape = CircleShape,
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.inverseSurface,
+            selectedLabelColor = MaterialTheme.colorScheme.inverseOnSurface,
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = selected,
+            borderColor = MaterialTheme.colorScheme.outlineVariant,
+            selectedBorderColor = Color.Transparent,
+        ),
+    )
+}
+
+private fun FilterCategory.toState(): SelectionState? = when (this) {
+    FilterCategory.ALL -> null
+    FilterCategory.ACCEPT -> SelectionState.ACCEPT
+    FilterCategory.REJECT -> SelectionState.REJECT
+    FilterCategory.PENDING -> SelectionState.PENDING
+}
+
+@Composable
+private fun GalleryEmpty(filter: FilterCategory) {
+    val (title, body) = when (filter) {
+        FilterCategory.ALL -> R.string.gallery_empty_all_title to R.string.gallery_empty_all_body
+        FilterCategory.ACCEPT -> R.string.gallery_empty_keep_title to R.string.gallery_empty_keep_body
+        FilterCategory.REJECT -> R.string.gallery_empty_reject_title to R.string.gallery_empty_reject_body
+        FilterCategory.PENDING -> R.string.gallery_empty_pending_title to R.string.gallery_empty_pending_body
+    }
+    val state = filter.toState()
+    EmptyState(
+        icon = state?.icon() ?: Icons.Rounded.PhotoLibrary,
+        title = stringResource(title),
+        body = stringResource(body),
+        tint = state?.let { OmaiTheme.colors.forState(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
@@ -241,7 +320,7 @@ private fun GalleryItemCard(
             libRawBridge.peekCached(
                 filePath = photoItem.fastDisplayPath,
                 isRaw = photoItem.shouldUseRawRenderer(),
-                targetMaxDimension = 512,
+                targetMaxDimension = GALLERY_THUMBNAIL_TARGET,
                 cacheVersion = photoItem.modifiedAt,
             ),
         )
@@ -253,81 +332,188 @@ private fun GalleryItemCard(
             filePath = photoItem.fastDisplayPath,
             isRaw = photoItem.shouldUseRawRenderer(),
             fastMode = true,
-            targetMaxDimension = 512,
+            targetMaxDimension = GALLERY_THUMBNAIL_TARGET,
             cacheVersion = photoItem.modifiedAt,
         )
     }
 
+    val state = photoItem.selectionState
+    val description = stringResource(R.string.photo_state_description, photoItem.displayFileName, state.label())
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(12.dp))
-            .background(DarkSurfaceVariant)
-            .border(
-                width = 1.5.dp,
-                color = when (photoItem.selectionState) {
-                    SelectionState.ACCEPT -> AcceptGreen
-                    SelectionState.REJECT -> RejectRed
-                    SelectionState.PENDING -> BorderColor
-                },
-                shape = RoundedCornerShape(12.dp),
-            )
-            .clickable { onClick() },
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = description },
     ) {
         val shown = thumbnail
         if (shown != null) {
             Image(
                 bitmap = remember(shown) { shown.asImageBitmap() },
-                contentDescription = photoItem.displayFileName,
+                contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    // Rejected photos recede so the keepers stand out at a glance.
+                    .graphicsLayer { alpha = if (state == SelectionState.REJECT) 0.42f else 1f },
             )
         } else {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = PrimaryNeon)
+            Icon(
+                imageVector = Icons.Rounded.Image,
+                contentDescription = null,
+                tint = OmaiTheme.colors.textTertiary,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(24.dp),
+            )
+        }
+
+        // Undecided photos carry no badge, so decided ones are what the eye picks up.
+        if (state != SelectionState.PENDING) {
+            SelectionStateBadge(
+                state = state,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PhotoDetailDialog(
+    photo: PhotoItem,
+    position: Int,
+    total: Int,
+    libRawBridge: LibRawBridge,
+    onDismiss: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onStateChange: (SelectionState) -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.action_close))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = photo.displayFileName,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = stringResource(R.string.gallery_detail_position, position, total) +
+                                " · " + PhotoFormatting.formatBadge(photo),
+                            style = MaterialTheme.typography.bodySmall.tabular(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(Spacing.sm))
+                }
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.md),
+                ) {
+                    PhotoCardView(
+                        photoItem = photo,
+                        libRawBridge = libRawBridge,
+                        showExifOverlay = true,
+                        targetMaxDimension = 2048,
+                    )
+                    PagerButton(
+                        icon = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                        description = stringResource(R.string.gallery_previous),
+                        enabled = position > 1,
+                        onClick = onPrevious,
+                        modifier = Modifier.align(Alignment.CenterStart),
+                    )
+                    PagerButton(
+                        icon = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        description = stringResource(R.string.gallery_next),
+                        enabled = position < total,
+                        onClick = onNext,
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                    )
+                }
+
+                val options = listOf(SelectionState.ACCEPT, SelectionState.PENDING, SelectionState.REJECT)
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.lg),
+                ) {
+                    options.forEachIndexed { index, option ->
+                        SegmentedButton(
+                            selected = photo.selectionState == option,
+                            onClick = { onStateChange(option) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                            colors = SegmentedButtonDefaults.colors(
+                                activeContainerColor = OmaiTheme.colors.containerForState(option),
+                                activeContentColor = OmaiTheme.colors.onContainerForState(option),
+                                activeBorderColor = OmaiTheme.colors.forState(option),
+                                inactiveContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                inactiveBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                            ),
+                            icon = {
+                                Icon(option.icon(), contentDescription = null, modifier = Modifier.size(18.dp))
+                            },
+                            modifier = Modifier.height(52.dp),
+                        ) {
+                            Text(option.label(), style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
             }
         }
+    }
+}
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(6.dp)
-                .clip(CircleShape)
-                .background(
-                    when (photoItem.selectionState) {
-                        SelectionState.ACCEPT -> AcceptGreen
-                        SelectionState.REJECT -> RejectRed
-                        SelectionState.PENDING -> Color.Gray
-                    },
-                )
-                .padding(4.dp),
-        ) {
-            Icon(
-                imageVector = when (photoItem.selectionState) {
-                    SelectionState.ACCEPT -> Icons.Default.Check
-                    SelectionState.REJECT -> Icons.Default.Close
-                    SelectionState.PENDING -> Icons.Default.QuestionMark
-                },
-                contentDescription = null,
-                tint = TextPrimary,
-                modifier = Modifier.size(12.dp),
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(6.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(Color.Black.copy(alpha = 0.75f))
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-        ) {
-            Text(
-                text = photoItem.displayBadge,
-                color = if (photoItem.isRawFile()) PrimaryNeon else AcceptGreen,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-            )
+@Composable
+private fun PagerButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (!enabled) return
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = Color.Black.copy(alpha = 0.45f),
+        contentColor = Color.White,
+        modifier = modifier
+            .padding(Spacing.sm)
+            .size(44.dp)
+            .semantics { contentDescription = description },
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null)
         }
     }
 }

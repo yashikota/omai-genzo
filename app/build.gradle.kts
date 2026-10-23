@@ -91,6 +91,15 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests.all { test ->
+            // Print the failing assertion in the CI log instead of only in the HTML report.
+            test.testLogging {
+                events("failed")
+                exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            }
+        }
+    }
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
@@ -137,4 +146,6 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    // Real Uri, SharedPreferences, org.json and ContentResolver for the ViewModel and repository tests.
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }
